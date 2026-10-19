@@ -36,6 +36,7 @@ import { crearGuardian } from './rutas/guardian.js'
 import { enmascararSecretos } from './util/enmascarar.js'
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1_000
+const UN_DIA_MS = 24 * 60 * 60 * 1_000
 const ACTIVIDAD_RECIENTE_MS = 30_000
 const lectorClaude = crearLectorClaude()
 const lectorRollouts = crearLectorRollouts()
@@ -97,13 +98,14 @@ function idMaquina(nombre: string): string {
 async function construirProyectos(
   bases: ProyectoBase[],
   ahoraMs: number,
+  guardian: ReturnType<typeof crearGuardian>,
 ): Promise<ProyectoEnConstruccion[]> {
   return Promise.all(
     bases.map(async (base) => {
       const git = await estadoGit(base.ruta, ahoraMs)
       const [planes, handoff] = await Promise.all([
-        leerPlanes(base.ruta),
-        leerHandoff(base.ruta, git.ultimoCommit?.fechaMs ?? null),
+        leerPlanes(base.ruta, guardian),
+        leerHandoff(base.ruta, git.ultimoCommit?.fechaMs ?? null, guardian),
       ])
       const pendientes = handoff === null ? planes : [...planes, handoff]
       return {
@@ -187,7 +189,10 @@ function agenteClaude(
     padreId: resumen.agenteSubId === null ? null : idBase,
     entrada: viva?.entrada ?? null,
     puedeContinuar: estado === 'cerrada' && resumen.agenteSubId === null,
-    tareas: resumen.tareas,
+    tareas: resumen.tareas.map((tarea) => ({
+      ...tarea,
+      texto: enmascararSecretos(tarea.texto),
+    })),
   }
 }
 
@@ -405,12 +410,15 @@ async function construirAgentesCodex(
     }
   }
 
-  let procesos: ProcesoCodex[] = []
-  try {
-    procesos = await procesosCodex(dep.so, dep.ejecutar)
-  } catch {
-    // Si no se pueden listar procesos, los hilos se consideran cerrados.
-  }
+  const procesosDetectados = await procesosCodex(dep.so, dep.ejecutar, dep.ahoraMs)
+  const procesos: ProcesoCodex[] = procesosDetectados ?? [
+    {
+      pid: 0,
+      cwd: null,
+      inicioMs: dep.ahoraMs - UN_DIA_MS,
+      interactivo: true,
+    },
+  ]
   const abiertos = hilosAbiertos(hilos, procesos)
   const agentes: Agente[] = []
   for (const hilo of hilos) {
@@ -493,19 +501,25 @@ export async function construirInstantanea(
     esDirectorio(dep.rutas.codex),
   ])
   const bases = await descubrirProyectos(dep.cfg, dep.rutas)
-  const proyectos = await construirProyectos(bases, dep.ahoraMs)
 
   const candidatasPermitidas = [
     path.join(dep.rutas.claude, 'projects'),
     path.join(dep.rutas.claude, 'sessions'),
     path.join(dep.rutas.codex, 'sessions'),
     ...bases.map((proyecto) => proyecto.ruta),
+    ...bases.map((proyecto) => path.join(path.dirname(proyecto.ruta), 'HANDOFF.md')),
   ]
   const permitidas: string[] = []
   for (const candidata of candidatasPermitidas) {
-    if (await esDirectorio(candidata)) permitidas.push(candidata)
+    try {
+      await stat(candidata)
+      permitidas.push(candidata)
+    } catch {
+      // Una ruta opcional puede no existir o desaparecer durante el escaneo.
+    }
   }
   const guardian = crearGuardian({ permitidas })
+  const proyectos = await construirProyectos(bases, dep.ahoraMs, guardian)
 
   const [claude, codex] = await Promise.all([
     construirAgentesClaude(dep, bases, guardian, hayClaude),

@@ -33,18 +33,10 @@ function convertirSesion(
   if (!esRegistro(valor)) return null
 
   const { pid, sessionId, cwd, name, status, entrypoint, startedAt, updatedAt } = valor
-  const inicioMs = aFechaMs(startedAt)
-  const actualizadaMs = aFechaMs(updatedAt)
   if (
     typeof pid !== 'number' ||
-    !Number.isInteger(pid) ||
-    typeof sessionId !== 'string' ||
-    typeof cwd !== 'string' ||
-    typeof name !== 'string' ||
-    (status !== 'idle' && status !== 'busy') ||
-    typeof entrypoint !== 'string' ||
-    inicioMs === null ||
-    actualizadaMs === null
+    !Number.isFinite(pid) ||
+    typeof sessionId !== 'string'
   ) {
     return null
   }
@@ -52,12 +44,12 @@ function convertirSesion(
   return {
     pid,
     sessionId,
-    cwd,
-    nombre: name,
-    status,
-    entrada: entrypoint,
-    inicioMs,
-    actualizadaMs,
+    cwd: typeof cwd === 'string' ? cwd : '',
+    nombre: typeof name === 'string' ? name : sessionId,
+    status: status === 'busy' ? 'busy' : 'idle',
+    entrada: typeof entrypoint === 'string' ? entrypoint : 'desconocida',
+    inicioMs: aFechaMs(startedAt) ?? 0,
+    actualizadaMs: aFechaMs(updatedAt) ?? 0,
     vivo: pidVivo(pid),
   }
 }

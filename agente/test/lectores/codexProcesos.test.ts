@@ -7,11 +7,12 @@ import {
 import type { HiloCodex } from '../../src/lectores/codexHilos.js'
 
 describe('procesosCodex', () => {
-  it('detecta procesos macOS, descarta falsos positivos y consulta sus cwd', async () => {
+  it('calcula el inicio en macOS desde etime y consulta los cwd', async () => {
+    const ahoraMs = Date.UTC(2026, 9, 19, 12, 0, 0)
     const salidaPs = [
-      ' 101 Sun Oct 19 08:15:30 2026 /opt/homebrew/bin/codex',
-      ' 202 Sun Oct 19 08:16:30 2026 node /opt/codex/bin/codex.js exec tarea',
-      ' 303 Sun Oct 19 08:17:30 2026 grep codex',
+      ' 101 2-03:04:05 /opt/homebrew/bin/codex',
+      ' 202 07:08 node /opt/codex/bin/codex.js exec tarea',
+      ' 303 00:03 grep codex',
     ].join('\n')
     const ejecutar = vi.fn(async (cmd: string, args: string[]) => {
       if (cmd === 'ps') return salidaPs
@@ -20,21 +21,21 @@ describe('procesosCodex', () => {
       return ''
     })
 
-    await expect(procesosCodex('macos', ejecutar)).resolves.toEqual([
+    await expect(procesosCodex('macos', ejecutar, ahoraMs)).resolves.toEqual([
       {
         pid: 101,
         cwd: '/Proyectos IA/Uno',
-        inicioMs: Date.parse('Sun Oct 19 08:15:30 2026'),
+        inicioMs: ahoraMs - (2 * 24 * 60 * 60 + 3 * 60 * 60 + 4 * 60 + 5) * 1_000,
         interactivo: true,
       },
       {
         pid: 202,
         cwd: '/Proyectos IA/Dos',
-        inicioMs: Date.parse('Sun Oct 19 08:16:30 2026'),
+        inicioMs: ahoraMs - (7 * 60 + 8) * 1_000,
         interactivo: false,
       },
     ])
-    expect(ejecutar).toHaveBeenCalledWith('ps', ['-axo', 'pid=,lstart=,command='])
+    expect(ejecutar).toHaveBeenCalledWith('ps', ['-axo', 'pid=,etime=,command='])
   })
 
   it('lee los procesos de PowerShell con cwd desconocido', async () => {
@@ -53,7 +54,7 @@ describe('procesosCodex', () => {
       ]),
     )
 
-    await expect(procesosCodex('windows', ejecutar)).resolves.toEqual([
+    await expect(procesosCodex('windows', ejecutar, Date.now())).resolves.toEqual([
       {
         pid: 404,
         cwd: null,
@@ -72,6 +73,15 @@ describe('procesosCodex', () => {
       '-Command',
       "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'codex' } | Select ProcessId,CreationDate,CommandLine | ConvertTo-Json",
     ])
+  })
+
+  it('devuelve null si falla el listado de procesos', async () => {
+    const ejecutar = vi.fn(async () => {
+      throw new Error('ps no disponible')
+    })
+
+    await expect(procesosCodex('macos', ejecutar, Date.now())).resolves.toBeNull()
+    await expect(procesosCodex('windows', ejecutar, Date.now())).resolves.toBeNull()
   })
 })
 
@@ -131,5 +141,20 @@ describe('hilosAbiertos', () => {
     const procesos: ProcesoCodex[] = [{ pid: 1, cwd: '/', inicioMs: 1_000, interactivo: true }]
 
     expect(hilosAbiertos(hilos, procesos)).toEqual(new Set(['uno', 'dos']))
+  })
+
+  it('marca todos los hilos recientes cuando hay varios procesos interactivos en el mismo cwd', () => {
+    const hilos = [
+      hilo('primero', '/repo', 2_000),
+      hilo('segundo', '/repo', 4_000),
+      hilo('anterior', '/repo', 500),
+      hilo('otro', '/otro', 5_000),
+    ]
+    const procesos: ProcesoCodex[] = [
+      { pid: 1, cwd: '/repo', inicioMs: 1_500, interactivo: true },
+      { pid: 2, cwd: '/repo', inicioMs: 1_000, interactivo: true },
+    ]
+
+    expect(hilosAbiertos(hilos, procesos)).toEqual(new Set(['primero', 'segundo']))
   })
 })

@@ -79,4 +79,30 @@ describe('leerSesionesVivas', () => {
     expect(leer).toHaveBeenCalledTimes(3)
     expect(leer.mock.calls.every(([ruta]) => !ruta.endsWith('.key'))).toBe(true)
   })
+
+  it('conserva una sesión con campos opcionales ausentes y normaliza su status a idle', async () => {
+    const directorio = await crearDirectorioTemporal()
+    await writeFile(
+      path.join(directorio, '303.json'),
+      JSON.stringify({
+        pid: 303,
+        sessionId: 'sesion-permiso',
+        status: 'waiting_permission',
+      }),
+    )
+
+    await expect(leerSesionesVivas(directorio, () => true)).resolves.toEqual([
+      {
+        pid: 303,
+        sessionId: 'sesion-permiso',
+        cwd: '',
+        nombre: 'sesion-permiso',
+        status: 'idle',
+        entrada: 'desconocida',
+        inicioMs: 0,
+        actualizadaMs: 0,
+        vivo: true,
+      },
+    ])
+  })
 })

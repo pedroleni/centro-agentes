@@ -17,9 +17,23 @@ function estadoVacio(): EstadoGit {
   }
 }
 
-async function git(ruta: string, argumentos: string[]): Promise<string | null> {
+// La configuración de un repo puede ejecutar programas (fsmonitor, gpg al
+// mostrar firmas, filtros clean/process de .gitattributes). Un repo descargado
+// en una de las carpetas escaneadas no debe poder ejecutar nada aquí, así que
+// todas las llamadas los anulan con -c, que manda sobre la config del repo.
+const CONFIG_SEGURA = [
+  '-c', 'core.fsmonitor=false',
+  '-c', 'log.showSignature=false',
+  '-c', 'core.hooksPath=/dev/null',
+]
+
+async function git(
+  ruta: string,
+  argumentos: string[],
+  extra: string[] = [],
+): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('git', ['-C', ruta, ...argumentos], {
+    const { stdout } = await execFileAsync('git', [...CONFIG_SEGURA, ...extra, '-C', ruta, ...argumentos], {
       timeout: 5_000,
       env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
       encoding: 'utf8',
@@ -30,16 +44,39 @@ async function git(ruta: string, argumentos: string[]): Promise<string | null> {
   }
 }
 
+// Leer la config no ejecuta nada. Con ella se anula cada filtro definido, para
+// que `git status` no pase el contenido de los ficheros por programas del repo.
+async function filtrosAnulados(ruta: string): Promise<string[]> {
+  const salida = await git(ruta, ['config', '-z', '--name-only', '--get-regexp', '^filter\\.'])
+  const nombres = new Set<string>()
+  for (const clave of (salida ?? '').split('\0')) {
+    const encontrado = /^filter\.(.+)\.[^.]+$/.exec(clave)
+    if (encontrado?.[1]) nombres.add(encontrado[1])
+  }
+  return [...nombres].flatMap((nombre) => [
+    '-c', `filter.${nombre}.clean=`,
+    '-c', `filter.${nombre}.smudge=`,
+    '-c', `filter.${nombre}.process=`,
+    '-c', `filter.${nombre}.required=false`,
+  ])
+}
+
 export async function estadoGit(ruta: string, ahoraMs: number): Promise<EstadoGit> {
   const desdeMs = ahoraMs - 14 * DIA_MS
+  const sinFiltros = await filtrosAnulados(ruta)
   const [ramaTexto, commitTexto, estadoTexto, divergenciaTexto, ramasTexto, actividadTexto] =
     await Promise.all([
       git(ruta, ['symbolic-ref', '--short', 'HEAD']),
-      git(ruta, ['log', '-1', '--format=%h%x00%s%x00%ct']),
-      git(ruta, ['status', '--porcelain=v1', '-z']),
+      git(ruta, ['log', '--no-show-signature', '-1', '--format=%h%x00%s%x00%ct']),
+      git(ruta, ['status', '--ignore-submodules=all', '--porcelain=v1', '-z'], sinFiltros),
       git(ruta, ['rev-list', '--left-right', '--count', '@{u}...HEAD']),
       git(ruta, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']),
-      git(ruta, ['log', `--since=${new Date(desdeMs).toISOString()}`, '--format=%ct']),
+      git(ruta, [
+        'log',
+        '--no-show-signature',
+        `--since=${new Date(desdeMs).toISOString()}`,
+        '--format=%ct',
+      ]),
     ])
 
   if (

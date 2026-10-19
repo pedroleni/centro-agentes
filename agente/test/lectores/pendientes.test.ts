@@ -1,8 +1,9 @@
-import { mkdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { leerHandoff, leerPlanes } from '../../src/lectores/pendientes.js'
+import { crearGuardian } from '../../src/rutas/guardian.js'
 
 const temporales: string[] = []
 
@@ -28,7 +29,8 @@ describe('lectores de pendientes', () => {
     )
     await writeFile(path.join(proyecto, 'docs/superpowers/plans/2026-09-01-vacio.md'), '# Sin tareas\n')
 
-    await expect(leerPlanes(proyecto)).resolves.toEqual([
+    const guardian = crearGuardian({ permitidas: [proyecto] })
+    await expect(leerPlanes(proyecto, guardian)).resolves.toEqual([
       {
         origen: 'plan',
         titulo: 'Plan de git',
@@ -46,7 +48,8 @@ describe('lectores de pendientes', () => {
       path.join(raiz, 'HANDOFF.md'),
       '# Estado al cerrar sesión — 2026-08-14\n\n## 1. proyecto-a — feature a medio camino\n\n**LO QUE FALTA, y es lo primero que hay que hacer:**\n\n1. **Aplicar `0004.sql` a mano** en el SQL Editor…\n2. **Verificación final** de la migración\n\n## 2. proyecto-b — otro\n',
     )
-    const pendiente = await leerHandoff(proyecto, Date.UTC(2026, 8, 11))
+    const guardian = crearGuardian({ permitidas: [proyecto, path.join(raiz, 'HANDOFF.md')] })
+    const pendiente = await leerHandoff(proyecto, Date.UTC(2026, 8, 11), guardian)
     expect(pendiente).toEqual({
       origen: 'handoff',
       titulo: 'Aplicar 0004.sql a mano en el SQL Editor…',
@@ -60,7 +63,8 @@ describe('lectores de pendientes', () => {
   it('devuelve null cuando el handoff padre no tiene sección del proyecto', async () => {
     const { raiz, proyecto } = await fixture()
     await writeFile(path.join(raiz, 'HANDOFF.md'), '# Estado\n\n## 1. proyecto-b\n\n- Otra cosa\n')
-    await expect(leerHandoff(proyecto, null)).resolves.toBeNull()
+    const guardian = crearGuardian({ permitidas: [proyecto, path.join(raiz, 'HANDOFF.md')] })
+    await expect(leerHandoff(proyecto, null, guardian)).resolves.toBeNull()
   })
 
   it('usa un HANDOFF propio aunque no haya sección y toma su mtime sin fecha', async () => {
@@ -69,7 +73,8 @@ describe('lectores de pendientes', () => {
     await writeFile(ruta, '# Estado\n\n**Pendiente:**\n\n- Revisar cambios\n')
     const fecha = new Date(Date.UTC(2026, 7, 20))
     await utimes(ruta, fecha, fecha)
-    const pendiente = await leerHandoff(proyecto, null)
+    const guardian = crearGuardian({ permitidas: [proyecto] })
+    const pendiente = await leerHandoff(proyecto, null, guardian)
     expect(pendiente?.titulo).toBe('Revisar cambios')
     expect(pendiente?.fechaMs).toBe(fecha.getTime())
   })
@@ -82,7 +87,8 @@ describe('lectores de pendientes', () => {
       '# Estado — 2026-08-14\n\n## 1. proyecto-a — algo\n\n- x\n\n## 2. proyecto-b — terminado y funcionando\n\nRepo aparte, ya en GitHub.\n',
     )
 
-    const pendiente = await leerHandoff(proyectoB, null)
+    const guardian = crearGuardian({ permitidas: [proyectoB, path.join(raiz, 'HANDOFF.md')] })
+    const pendiente = await leerHandoff(proyectoB, null, guardian)
     expect(pendiente?.titulo).toBe('2. proyecto-b — terminado y funcionando')
   })
 
@@ -93,7 +99,26 @@ describe('lectores de pendientes', () => {
       '# Estado — 2026-08-14\n\n## 1. proyecto-a — algo\n\n**LO QUE FALTA:**\n1. **Aplicar `0004.sql` a mano** en el SQL Editor de\n   Supabase, copiando el fichero.\n2. Otra cosa\n',
     )
 
-    const pendiente = await leerHandoff(proyecto, null)
+    const guardian = crearGuardian({ permitidas: [proyecto, path.join(raiz, 'HANDOFF.md')] })
+    const pendiente = await leerHandoff(proyecto, null, guardian)
     expect(pendiente?.titulo).toBe('Aplicar 0004.sql a mano en el SQL Editor de Supabase, copiando el fichero.')
+  })
+
+  it('rechaza un HANDOFF que enlaza a un fichero prohibido', async () => {
+    const { proyecto } = await fixture()
+    const entorno = path.join(proyecto, '.env')
+    await writeFile(entorno, '# Pendiente:\n\n- TOKEN=abc123secret\n')
+    await symlink(entorno, path.join(proyecto, 'HANDOFF.md'))
+    const guardian = crearGuardian({ permitidas: [proyecto] })
+
+    await expect(leerHandoff(proyecto, null, guardian)).resolves.toBeNull()
+  })
+
+  it('devuelve null si HANDOFF.md es un directorio', async () => {
+    const { proyecto } = await fixture()
+    await mkdir(path.join(proyecto, 'HANDOFF.md'))
+    const guardian = crearGuardian({ permitidas: [proyecto] })
+
+    await expect(leerHandoff(proyecto, null, guardian)).resolves.toBeNull()
   })
 })

@@ -1,6 +1,7 @@
 import { access, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { Pendiente } from '@centro/compartido'
+import type { crearGuardian } from '../rutas/guardian.js'
 
 const DIA = 86_400_000
 
@@ -19,7 +20,10 @@ function pendientePlan(titulo: string, fechaMs: number, contenido: string): Pend
   return { origen: 'plan', titulo, fechaMs, hechas, total, quizaDesactualizado: false }
 }
 
-export async function leerPlanes(rutaProyecto: string): Promise<Pendiente[]> {
+export async function leerPlanes(
+  rutaProyecto: string,
+  guardian: ReturnType<typeof crearGuardian>,
+): Promise<Pendiente[]> {
   const directorio = path.join(rutaProyecto, 'docs', 'superpowers', 'plans')
   let nombres: string[]
   try {
@@ -33,7 +37,8 @@ export async function leerPlanes(rutaProyecto: string): Promise<Pendiente[]> {
     const fechaMs = fechaDelNombre(nombre)
     if (fechaMs === null || !nombre.endsWith('.md')) continue
     try {
-      const contenido = await readFile(path.join(directorio, nombre), 'utf8')
+      const ruta = await guardian.comprobar(path.join(directorio, nombre))
+      const contenido = await readFile(ruta, 'utf8')
       const titulo = /^#\s+(.+)$/m.exec(contenido)?.[1]?.trim()
       if (titulo === undefined) continue
       const pendiente = pendientePlan(titulo, fechaMs, contenido)
@@ -108,29 +113,42 @@ async function existe(ruta: string): Promise<boolean> {
 export async function leerHandoff(
   rutaProyecto: string,
   ultimoCommitMs: number | null,
+  guardian: ReturnType<typeof crearGuardian>,
 ): Promise<Pendiente | null> {
   const propio = path.join(rutaProyecto, 'HANDOFF.md')
   const padre = path.join(path.dirname(rutaProyecto), 'HANDOFF.md')
   const esPropio = await existe(propio)
-  const ruta = esPropio ? propio : padre
-  if (!esPropio && !(await existe(ruta))) return null
+  const candidata = esPropio ? propio : padre
+  if (!esPropio && !(await existe(candidata))) return null
 
-  const contenido = await readFile(ruta, 'utf8')
-  let seleccionado = contenido
-  if (!esPropio) {
-    const nombreProyecto = path.basename(rutaProyecto)
-    const seccion = secciones(contenido).find((item) => item.titulo.includes(nombreProyecto))
-    if (seccion === undefined) return null
-    seleccionado = seccion.texto
+  let ruta: string
+  try {
+    ruta = await guardian.comprobar(candidata)
+  } catch {
+    return null
   }
-  const informacion = await stat(ruta)
-  const fechaMs = fechaDelDocumento(contenido, informacion.mtimeMs)
-  return {
-    origen: 'handoff',
-    titulo: tituloPendiente(seleccionado),
-    fechaMs,
-    hechas: null,
-    total: null,
-    quizaDesactualizado: ultimoCommitMs !== null && ultimoCommitMs > fechaMs + DIA,
+
+  try {
+    const contenido = await readFile(ruta, 'utf8')
+    let seleccionado = contenido
+    if (!esPropio) {
+      const nombreProyecto = path.basename(rutaProyecto)
+      const seccion = secciones(contenido).find((item) => item.titulo.includes(nombreProyecto))
+      if (seccion === undefined) return null
+      seleccionado = seccion.texto
+    }
+    const informacion = await stat(ruta)
+    const fechaMs = fechaDelDocumento(contenido, informacion.mtimeMs)
+    return {
+      origen: 'handoff',
+      titulo: tituloPendiente(seleccionado),
+      fechaMs,
+      hechas: null,
+      total: null,
+      quizaDesactualizado: ultimoCommitMs !== null && ultimoCommitMs > fechaMs + DIA,
+    }
+  } catch {
+    // El fichero puede ser ilegible o desaparecer durante el escaneo.
+    return null
   }
 }
