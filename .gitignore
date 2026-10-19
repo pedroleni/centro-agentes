@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.codex-logs/
+centro-agentes.config.json
+.env*
