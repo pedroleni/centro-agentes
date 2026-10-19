@@ -1,0 +1,222 @@
+<style>
+  .ca { --bg:#f4f5f8; --card:#fff; --ink:#1b1d23; --mute:#6b7080; --line:#e3e5ec; --blue:#2f5fd0; --blue-2:#e9effc;
+        --claude:#d97757; --codex:#111; --ok:#1f9d55; --wait:#c27c0e; --run:#2f5fd0; --warn:#b4530a; --warn-bg:#fff4e6;
+        font-family: "Inter", ui-sans-serif, -apple-system, system-ui, sans-serif; color: var(--ink); background: var(--bg);
+        border-radius: 14px; overflow: hidden; border: 1px solid var(--line); font-size: 13px; }
+  .ca * { box-sizing: border-box; }
+  .ca .mono { font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+  .ca-bar { background: linear-gradient(90deg,#2a55c4,#3a6ee0); color:#fff; display:flex; align-items:center; gap:14px; padding: 12px 20px; }
+  .ca-bar .logo { width:28px; height:28px; border-radius:8px; background:rgba(255,255,255,.18); display:grid; place-items:center; font-weight:800; }
+  .ca-bar h5 { margin:0; font-size:17px; font-weight:600; letter-spacing:-.01em; }
+  .ca-bar .search { margin-left:auto; background:rgba(255,255,255,.16); border-radius:10px; padding:7px 12px; width:240px; color:#dfe8ff; font-size:12.5px; }
+  .ca-bar .stat { font-size:12px; background:rgba(255,255,255,.14); padding:5px 10px; border-radius:999px; }
+  .ca-filters { display:flex; gap:8px; padding: 14px 20px 0; }
+  .ca-chipf { border:1px solid var(--line); background:#fff; border-radius:999px; padding:5px 12px; font-size:12px; color:var(--mute); }
+  .ca-chipf.on { background:var(--blue-2); border-color:#c9d7f7; color:var(--blue); font-weight:600; }
+  .ca-body { padding: 6px 20px 20px; }
+  .ca-group { display:flex; align-items:center; gap:8px; margin: 18px 0 10px; color:#3b3f4c; font-size:15px; font-weight:600; }
+  .ca-group small { color:var(--mute); font-weight:400; font-size:12px; }
+  .ca-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(290px,1fr)); gap:14px; }
+  .ca-card { background:var(--card); border-radius:14px; padding:14px 16px 12px; box-shadow: 0 1px 2px rgba(20,24,40,.06), 0 4px 14px rgba(20,24,40,.05); border:1px solid #eceef3; display:flex; flex-direction:column; gap:10px; position:relative; }
+  .ca-card.live::before { content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:0 3px 3px 0; background:var(--claude); }
+  .ca-head { display:flex; align-items:center; gap:8px; }
+  .ca-head .name { font-size:15px; font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ca-ico { width:28px; height:28px; border-radius:8px; display:grid; place-items:center; color:var(--mute); border:1px solid var(--line); font-size:12px; }
+  .ca-prompt { color:#4a4f5e; font-style:italic; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ca-prompt::before { content:"❝ "; color:#b8bccb; font-style:normal; }
+  .ca-chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .ca-chip { border:1px solid var(--line); border-radius:999px; padding:3px 9px; font-size:11.5px; color:#3b3f4c; background:#fafbfc; }
+  .ca-chip.pr { color:var(--blue); border-color:#c9d7f7; background:var(--blue-2); }
+  .ca-chip.warn { color:var(--warn); border-color:#f7d6ad; background:var(--warn-bg); }
+  .ca-agents { display:flex; flex-direction:column; gap:7px; border-top:1px dashed var(--line); padding-top:9px; }
+  .ca-ag { display:grid; grid-template-columns: 22px 1fr auto; align-items:center; gap:8px; font-size:12px; }
+  .ca-av { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:11px; color:#fff; font-weight:700; }
+  .ca-av.cl { background:var(--claude); } .ca-av.cx { background:var(--codex); }
+  .ca-ag .meta { display:flex; align-items:center; gap:8px; min-width:0; }
+  .ca-ag .meta b { font-weight:600; white-space:nowrap; }
+  .ca-ctx { display:flex; align-items:center; gap:6px; color:var(--mute); font-size:11px; }
+  .ca-ctx .track { width:64px; height:5px; border-radius:3px; background:#e7eaf0; overflow:hidden; }
+  .ca-ctx .track span { display:block; height:100%; background:#3f9b6b; }
+  .ca-st { display:flex; align-items:center; gap:5px; font-size:11.5px; white-space:nowrap; }
+  .ca-st i { width:7px; height:7px; border-radius:50%; display:inline-block; }
+  .ca-st.run { color:var(--run); } .ca-st.run i { background:var(--run); box-shadow:0 0 0 3px rgba(47,95,208,.18); animation: ca-p 1.4s infinite; }
+  .ca-st.wait { color:var(--wait); } .ca-st.wait i { background:var(--wait); }
+  .ca-st.done { color:var(--mute); } .ca-st.done i { background:#b7bccb; }
+  @keyframes ca-p { 50% { box-shadow:0 0 0 6px rgba(47,95,208,0); } }
+  .ca-foot { display:flex; justify-content:space-between; align-items:center; color:var(--mute); font-size:11.5px; }
+  .ca-spark { display:flex; gap:2px; align-items:flex-end; height:16px; }
+  .ca-spark i { width:4px; border-radius:1px; background:#c9d3ee; }
+  .ca-quiet { display:flex; gap:8px; flex-wrap:wrap; }
+  .ca-quiet span { background:#fff; border:1px solid var(--line); border-radius:10px; padding:7px 11px; font-size:12px; color:var(--mute); }
+
+  /* ---------- detalle ---------- */
+  .cd-top { background:#fff; border-bottom:1px solid var(--line); padding:14px 22px 0; }
+  .cd-crumb { color:var(--mute); font-size:12px; }
+  .cd-title { display:flex; align-items:center; gap:12px; margin-top:4px; }
+  .cd-title h5 { margin:0; font-size:22px; letter-spacing:-.02em; font-weight:650; }
+  .cd-actions { margin-left:auto; display:flex; gap:8px; }
+  .cd-btn { border:1px solid var(--line); background:#fff; border-radius:10px; padding:7px 12px; font-size:12.5px; font-weight:500; }
+  .cd-btn.pri { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .cd-tabs { display:flex; gap:22px; margin-top:14px; font-size:13px; color:var(--mute); }
+  .cd-tabs span { padding-bottom:10px; } .cd-tabs .on { color:var(--blue); font-weight:600; border-bottom:2px solid var(--blue); }
+  .cd-main { display:grid; grid-template-columns: 1.35fr 1fr; gap:16px; padding:16px 22px 22px; }
+  .cd-panel { background:#fff; border:1px solid #eceef3; border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(20,24,40,.05); }
+  .cd-panel h6 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); font-weight:600; display:flex; justify-content:space-between; }
+  .cd-day { font-size:12px; font-weight:700; color:#3b3f4c; margin:12px 0 6px; }
+  .cd-tl { position:relative; padding-left:18px; }
+  .cd-tl::before { content:""; position:absolute; left:6px; top:4px; bottom:4px; width:2px; background:#eceef3; }
+  .cd-ev { position:relative; padding:6px 0 8px; }
+  .cd-ev::before { content:""; position:absolute; left:-16px; top:11px; width:10px; height:10px; border-radius:50%; background:#fff; border:2px solid #b7bccb; }
+  .cd-ev.cx::before { border-color:#111; background:#111; }
+  .cd-ev.cl::before { border-color:var(--claude); background:var(--claude); }
+  .cd-ev .row { display:flex; gap:8px; align-items:baseline; }
+  .cd-ev .t { color:var(--mute); font-size:11px; width:36px; flex:none; }
+  .cd-ev .what { font-size:12.5px; }
+  .cd-ev .sub { margin:4px 0 0 44px; font-size:11.5px; color:var(--mute); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .cd-commit { font-size:11.5px; color:#3b3f4c; margin:3px 0 0 44px; }
+  .cd-commit code { color:var(--blue); background:var(--blue-2); padding:1px 5px; border-radius:5px; margin-right:6px; }
+  .cd-link { color:var(--blue); font-weight:600; font-size:11.5px; }
+  .cd-task { display:grid; grid-template-columns: 1fr auto; gap:4px 10px; padding:8px 0; border-bottom:1px solid #f0f1f5; }
+  .cd-task:last-child { border-bottom:0; }
+  .cd-task .n { font-size:12.5px; font-weight:500; }
+  .cd-task .d { font-size:11px; color:var(--mute); text-align:right; }
+  .cd-task .bar { grid-column:1/-1; height:5px; background:#eef0f4; border-radius:3px; overflow:hidden; }
+  .cd-task .bar span { display:block; height:100%; background:#3f9b6b; }
+  .cd-task.todo .bar span { background:#c9d3ee; }
+  .cd-flag { background:var(--warn-bg); border:1px solid #f7d6ad; border-radius:10px; padding:9px 11px; font-size:12px; color:#7a3d06; margin-bottom:10px; }
+  .cd-flag small { display:block; color:#a8641c; margin-top:3px; }
+  .cd-sess { border:1px solid #eceef3; border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .cd-sess .h { display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; }
+  .cd-sess .m { font-size:11px; color:var(--mute); margin:4px 0 8px 30px; }
+  .cd-sess .cmd { display:flex; gap:6px; margin-left:30px; align-items:center; }
+  .cd-sess .cmd code { flex:1; font-size:11px; background:#f4f5f8; border-radius:7px; padding:5px 8px; color:#3b3f4c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cd-sess .cmd .cd-btn { padding:5px 10px; font-size:11.5px; }
+  .vs-two h3 { margin: 1.4rem 0 .6rem; }
+</style>
+
+<h2>Estilo tarjetas, como tu captura (pero más afinado)</h2>
+<p class="subtitle">Todo con datos reales sacados ahora mismo de tu Mac. Arriba la vista general; debajo, qué ves al entrar en un proyecto.</p>
+
+<div class="vs-two">
+<h3>1 · Vista general</h3>
+<div class="ca">
+  <div class="ca-bar">
+    <div class="logo">◈</div><h5>Centro de agentes</h5>
+    <span class="stat">● 1 trabajando</span><span class="stat">◌ 3 esperándote</span>
+    <div class="search">⌕ Buscar proyecto, sesión o commit…</div>
+  </div>
+  <div class="ca-filters"><span class="ca-chipf on">Todos</span><span class="ca-chipf">Con agentes activos</span><span class="ca-chipf">Esperándome</span><span class="ca-chipf">Con pendientes</span></div>
+  <div class="ca-body">
+
+    <div class="ca-group">📁 Downloads <small>· 1 proyecto</small></div>
+    <div class="ca-grid">
+      <div class="ca-card live">
+        <div class="ca-head"><span class="name mono">Apuntes</span><span class="ca-ico">⌘</span><span class="ca-ico">&gt;_</span></div>
+        <div class="ca-prompt">no me gustan diseña mejor algo así con los diferentes proyectos…</div>
+        <div class="ca-chips"><span class="ca-chip mono">⑂ main</span><span class="ca-chip">3 sin commit</span></div>
+        <div class="ca-agents">
+          <div class="ca-ag"><span class="ca-av cl">✱</span><span class="meta"><b>Frontend de proyectos con Codex</b></span><span class="ca-st run"><i></i>Trabajando</span></div>
+          <div class="ca-ag" style="margin-top:-4px"><span></span><span class="ca-ctx">Opus 5.5 <span class="track"><span style="width:57%"></span></span>57%</span><span class="ca-ctx">⏱ 1h 10m</span></div>
+          <div class="ca-ag"><span class="ca-av cl">✱</span><span class="meta"><b>Commits retroactivos desde sept.</b></span><span class="ca-st wait"><i></i>Esperándote</span></div>
+          <div class="ca-ag" style="margin-top:-4px"><span></span><span class="ca-ctx">Opus 5.5 <span class="track"><span style="width:50%"></span></span>50%</span><span class="ca-ctx">⏱ 2h 31m</span></div>
+          <div class="ca-ag"><span class="ca-av cx">◎</span><span class="meta"><b>Crear commits diarios desde el 12…</b></span><span class="ca-st done"><i></i>Terminado</span></div>
+        </div>
+        <div class="ca-foot"><span>Último commit hace 40 min</span><span class="ca-spark"><i style="height:4px"></i><i style="height:7px"></i><i style="height:12px"></i><i style="height:9px"></i><i style="height:14px"></i><i style="height:16px"></i><i style="height:13px"></i></span></div>
+      </div>
+    </div>
+
+    <div class="ca-group">📁 Proyectos IA <small>· 3 proyectos · HANDOFF.md compartido</small></div>
+    <div class="ca-grid">
+      <div class="ca-card">
+        <div class="ca-head"><span class="name mono">tech-study-tracker</span><span class="ca-ico">⌘</span><span class="ca-ico">&gt;_</span></div>
+        <div class="ca-prompt">Genera CINCO fotografías con tu herramienta image_gen…</div>
+        <div class="ca-chips"><span class="ca-chip mono">⑂ main</span><span class="ca-chip">4 ramas</span><span class="ca-chip warn">⚑ 4 planes sin empezar</span></div>
+        <div class="ca-agents">
+          <div class="ca-ag"><span class="ca-av cx">◎</span><span class="meta"><b>Genera CINCO fotografías…</b></span><span class="ca-st done"><i></i>11 sep</span></div>
+          <div class="ca-ag" style="margin-top:-4px"><span></span><span class="ca-ctx">gpt-5.6-sol · medium · 271k tokens</span><span></span></div>
+        </div>
+        <div class="ca-foot"><span>Último commit 11 sep · leccion 66</span><span class="ca-spark"><i style="height:16px"></i><i style="height:12px"></i><i style="height:6px"></i><i style="height:2px"></i><i style="height:2px"></i><i style="height:2px"></i><i style="height:2px"></i></span></div>
+      </div>
+      <div class="ca-card">
+        <div class="ca-head"><span class="name mono">centro-agentes</span><span class="ca-ico">⌘</span><span class="ca-ico">&gt;_</span></div>
+        <div class="ca-prompt">Añade el diseño v1 del panel de proyectos y agentes</div>
+        <div class="ca-chips"><span class="ca-chip mono">⑂ main</span><span class="ca-chip">🔒 privado</span><span class="ca-chip warn">⚑ falta el plan</span></div>
+        <div class="ca-agents"><div class="ca-ag"><span class="ca-av cl">✱</span><span class="meta"><b>Frontend de proyectos con Codex</b></span><span class="ca-st run"><i></i>Trabajando</span></div></div>
+        <div class="ca-foot"><span>Último commit hace 1 h</span><span class="ca-spark"><i style="height:2px"></i><i style="height:2px"></i><i style="height:2px"></i><i style="height:2px"></i><i style="height:2px"></i><i style="height:2px"></i><i style="height:8px"></i></span></div>
+      </div>
+      <div class="ca-card" style="opacity:.7">
+        <div class="ca-head"><span class="name mono">codebase-memory-local</span><span class="ca-ico">⌘</span><span class="ca-ico">&gt;_</span></div>
+        <div class="ca-prompt">Review handoff documentation and MCP codebase memory…</div>
+        <div class="ca-chips"><span class="ca-chip mono">⑂ main</span><span class="ca-chip">6 PRs mergeados</span></div>
+        <div class="ca-foot"><span>Sin actividad · 9 semanas</span></div>
+      </div>
+    </div>
+
+    <div class="ca-group">📁 Desktop <small>· sin actividad en 30 días</small></div>
+    <div class="ca-quiet"><span>Apuntes · Codex hace 2 meses</span><span>javascript-proyectos</span><span>javascript-proyectos-solucion</span><span>typescript-proyectos</span><span>nodejs-proyectos</span><span>css-proyectos</span></div>
+  </div>
+</div>
+
+<h3>2 · Dentro de un proyecto: tareas, historial real y continuar sesiones</h3>
+<div class="ca">
+  <div class="cd-top">
+    <div class="cd-crumb">Proyectos › Proyectos IA ›</div>
+    <div class="cd-title"><h5 class="mono">tech-study-tracker</h5><span class="ca-chip mono">⑂ main</span><span class="ca-chip">4 ramas</span>
+      <div class="cd-actions"><span class="cd-btn">Abrir en VS Code</span><span class="cd-btn">Nueva tarea Codex</span><span class="cd-btn pri">Nueva sesión Claude</span></div></div>
+    <div class="cd-tabs"><span class="on">Resumen</span><span>Historial</span><span>Tareas</span><span>Sesiones</span><span>Ramas</span></div>
+  </div>
+  <div class="cd-main">
+    <div class="cd-panel">
+      <h6>Historial de desarrollo <span style="text-transform:none;letter-spacing:0">commits + agentes, en orden</span></h6>
+      <div class="cd-day">Jueves 11 sep</div>
+      <div class="cd-tl">
+        <div class="cd-ev"><div class="row"><span class="t">15:04</span><span class="what">Commit · <b>feat(css): leccion 66, animación dirigida por scroll</b></span></div><div class="cd-commit"><code>89e2650</code>main</div></div>
+        <div class="cd-ev cx"><div class="row"><span class="t">14:42</span><span class="what"><b>Codex</b> · Genera CINCO fotografías con image_gen</span></div>
+          <div class="sub">gpt-5.6-sol · medium · 271k tokens · terminado <span class="cd-link">Ver transcript ›</span> <span class="cd-link">Continuar ›</span></div></div>
+        <div class="cd-ev cx"><div class="row"><span class="t">13:23</span><span class="what"><b>Codex</b> · Añade soporte de vídeo al pipeline de medios</span></div>
+          <div class="sub">gpt-5.6-sol · medium · 417k tokens · generó 4 commits</div>
+          <div class="cd-commit"><code>1d4eda8</code>feat(medios): soporte de vídeo en lecciones</div>
+          <div class="cd-commit"><code>facbe23</code>fix(medios): recodificar los vídeos a resolución nativa</div>
+          <div class="cd-commit"><code>77ce652</code>test(css): vídeo del descenso a 1080p</div>
+          <div class="cd-commit"><code>6db8ba3</code>feat(medios): todos los vídeos a 1080p</div></div>
+      </div>
+      <div class="cd-day">Miércoles 10 sep</div>
+      <div class="cd-tl">
+        <div class="cd-ev"><div class="row"><span class="t">18:45</span><span class="what">Commit · <b>feat(css): lecciones 64 y 65, animación avanzada</b></span></div><div class="cd-commit"><code>5aec62a</code>main</div></div>
+        <div class="cd-ev cx"><div class="row"><span class="t">15:02</span><span class="what"><b>Codex</b> · Genera ilustraciones SVG para una landing…</span></div><div class="sub">gpt-5.6-sol · medium · 161k tokens</div></div>
+        <div class="cd-ev cl"><div class="row"><span class="t">01:13</span><span class="what"><b>Claude</b> · bloque editor-en-vivo con parallax (lección 63)</span></div><div class="cd-commit"><code>82fed34</code><code>e177d97</code>2 commits</div></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="cd-panel">
+        <h6>Tareas <span style="text-transform:none;letter-spacing:0">planes + handoff</span></h6>
+        <div class="cd-flag">⚑ Del HANDOFF · 14 ago: aplicar <span class="mono">0004_lecciones.sql</span> y verificar RLS con curl<small>Ojo: el handoff es más antiguo que 40 commits; puede estar resuelto</small></div>
+        <div class="cd-task"><span class="n">Imágenes en lecciones</span><span class="d">4 sep · 42/43</span><div class="bar"><span style="width:98%"></span></div></div>
+        <div class="cd-task"><span class="n">Consolidar repos de proyectos avanzados</span><span class="d">1 sep · ✓ 54/54</span><div class="bar"><span style="width:100%"></span></div></div>
+        <div class="cd-task todo"><span class="n">Git en vivo</span><span class="d">31 ago · 0/54</span><div class="bar"><span style="width:2%"></span></div></div>
+        <div class="cd-task todo"><span class="n">PostgreSQL en vivo</span><span class="d">31 ago · 0/54</span><div class="bar"><span style="width:2%"></span></div></div>
+        <div class="cd-task todo"><span class="n">SQL en vivo · TypeScript en vivo</span><span class="d">30 ago · 0/83</span><div class="bar"><span style="width:2%"></span></div></div>
+      </div>
+      <div class="cd-panel">
+        <h6>Continuar una sesión</h6>
+        <div class="cd-sess"><div class="h"><span class="ca-av cx">◎</span>Genera CINCO fotografías…<span class="ca-st done" style="margin-left:auto"><i></i>11 sep</span></div>
+          <div class="m">Codex · gpt-5.6-sol · medium · cerrada</div>
+          <div class="cmd"><code>codex resume 0199…a3f1</code><span class="cd-btn pri">Continuar aquí</span><span class="cd-btn">Copiar</span></div></div>
+        <div class="cd-sess"><div class="h"><span class="ca-av cl">✱</span>Review handoff documentation…<span class="ca-st wait" style="margin-left:auto"><i></i>Esperándote</span></div>
+          <div class="m">Claude · Opus 5.5 · abierta en VS Code (proyectos-ia-84)</div>
+          <div class="cmd"><code>Abierta en otro sitio: retomarla aquí la duplicaría</code><span class="cd-btn">Enviar mensaje</span></div></div>
+      </div>
+      <div class="cd-panel" style="padding:0;overflow:hidden;background:#0d1017;border-color:#0d1017">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#161a23;color:#aab2c5;font-size:11.5px">
+          <span style="width:9px;height:9px;border-radius:50%;background:#ff5f57"></span><span style="width:9px;height:9px;border-radius:50%;background:#febc2e"></span><span style="width:9px;height:9px;border-radius:50%;background:#28c840"></span>
+          <span class="mono" style="margin-left:6px">tmux · codex resume · tech-study-tracker</span><span style="margin-left:auto;color:#4ade80">● en vivo</span></div>
+        <pre class="mono" style="margin:0;padding:10px 12px;color:#cdd3e0;font-size:11px;line-height:1.55;white-space:pre-wrap">› Retomando «Genera CINCO fotografías…»
+<span style="color:#7f88a3">  5 imágenes en scratchpad/terral/ · última: terral-05.webp</span>
+<span style="color:#4ade80">›</span> ahora optimiza las cinco a webp 1600px<span style="background:#cdd3e0;color:#0d1017"> </span></pre>
+        <div style="display:flex;gap:6px;padding:0 12px 10px"><span class="mono" style="font-size:10.5px;color:#7f88a3;border:1px solid #2a2f3d;border-radius:6px;padding:3px 7px">Esc</span><span class="mono" style="font-size:10.5px;color:#7f88a3;border:1px solid #2a2f3d;border-radius:6px;padding:3px 7px">Ctrl</span><span class="mono" style="font-size:10.5px;color:#7f88a3;border:1px solid #2a2f3d;border-radius:6px;padding:3px 7px">Tab</span><span class="mono" style="font-size:10.5px;color:#7f88a3;border:1px solid #2a2f3d;border-radius:6px;padding:3px 7px">↑ ↓</span><span style="margin-left:auto;font-size:10.5px;color:#7f88a3">terminal en el navegador</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>

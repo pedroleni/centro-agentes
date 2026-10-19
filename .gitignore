@@ -3,3 +3,4 @@ dist/
 .codex-logs/
 centro-agentes.config.json
 .env*
+.superpowers/

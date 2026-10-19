@@ -1,262 +1,473 @@
-# centro-agentes: diseño v1
+# centro-agentes: diseño
 
-Fecha: 2026-10-19 · Estado: pendiente de aprobación
+Fecha: 2026-10-19 · Estado: pendiente de aprobación · Sustituye a la
+versión anterior de este mismo fichero, que era solo local y de lectura.
 
 ## 1. Para qué sirve
 
-Pedro trabaja en varios proyectos a la vez con dos tipos de agentes:
-sesiones de **Claude Code** (sobre todo desde VS Code) e hilos o tareas de
-**Codex CLI**. Hoy no hay ningún sitio donde ver todo junto. Para saber qué
-agente está trabajando, en qué proyecto, en qué rama y qué quedó pendiente,
-tiene que abrir terminales, abrir `HANDOFF.md` y levantar el monitor de
-Codex (`localhost:4545`) de cada repo por separado.
+Pedro trabaja en varios proyectos a la vez con dos tipos de agentes,
+**Claude Code** y **Codex CLI**, repartidos en **tres máquinas**:
 
-centro-agentes es un **panel web local** que lee lo que esas herramientas ya
-guardan en disco y lo enseña en un solo sitio. Pedro no tiene que apuntar
-nada a mano.
+- un MacBook (este portátil);
+- un **Mac mini** que está siempre encendido;
+- un **Windows**, donde usa los agentes directamente desde la terminal de
+  Windows (PowerShell). No usa WSL.
 
-## 2. Objetivos v1
+Hoy no tiene ningún sitio donde ver qué hace cada agente, en qué máquina,
+proyecto y rama, cuánto contexto lleva gastado, qué tareas quedan ni qué se
+ha hecho de verdad. Tampoco puede retomar una sesión sin sentarse delante de
+la máquina donde corre.
 
-1. **Inicio**: ver de un vistazo todos los proyectos, con su estado de git,
-   los agentes activos en cada uno y lo que tienen pendiente.
-2. **Agentes**: ver todas las sesiones de Claude Code y los hilos y tareas
-   de Codex en una lista, filtrable por proyecto y por estado.
-3. **Detalle de agente**: abrir cualquier agente y ver su línea de tiempo
-   (mensajes, comandos, herramientas), en directo si está trabajando. Esto
-   sustituye al `codex-monitor.mjs` de cada repo.
-4. **Ficha de proyecto**: estado de git, ramas, últimos commits, historial
-   de agentes y contenido del `HANDOFF.md`.
-5. Todo se actualiza solo, sin recargar la página.
+centro-agentes es un **panel web privado** que:
 
-## 3. Fuera de la v1 (llega después)
+1. junta en una sola vista las sesiones de Claude y Codex de las tres
+   máquinas;
+2. muestra, dentro de cada proyecto, las tareas con sus fechas y el
+   historial real de desarrollo (commits y sesiones de agentes mezclados);
+3. permite **continuar o abrir sesiones** en cualquiera de las tres máquinas
+   desde un terminal dentro del navegador, también desde el móvil.
 
-- **v2**: lanzar tareas de Codex desde el panel, eligiendo modelo y esfuerzo.
-- **v3**: enviar mensajes a una sesión de Claude Code abierta (por su socket
-  `messagingSocketPath`).
-- Ver PRs de GitHub (necesita red y el token de `gh`).
+La referencia es AI Beacon (https://blog.marcnuri.com/dashboard-agentes-ia-codificacion),
+pero con dos diferencias: este soporta **Codex** y se construye en casa.
+AI Beacon no soporta Codex y su código todavía no es público.
 
-**En la v1 no hay ningún endpoint que escriba, lance procesos ni modifique
-nada.** La única excepción es ejecutar `git` en modo lectura.
+## 2. Objetivos
+
+1. **Vista general por máquina**: un bloque por máquina (MacBook, Mac mini,
+   Windows) con su estado (conectada o desconectada, último latido) y
+   tarjetas de proyecto con:
+   - el último mensaje escrito a un agente;
+   - la rama y los cambios sin commitear;
+   - los avisos de pendientes;
+   - una fila por agente con su tipo, título, modelo, **porcentaje de
+     contexto usado**, estado y tiempo transcurrido.
+
+   El estilo es el de la maqueta de referencia `maquetas/estilo-tarjetas-v2.html`: claro, con
+   tarjetas, inspirado en AI Beacon y más afinado.
+2. **Ficha de proyecto**:
+   - **historial de desarrollo** agrupado por día, que mezcla commits y
+     sesiones de agentes y enseña bajo cada sesión los commits que produjo;
+   - **tareas con fecha**, sacadas de los planes y del `HANDOFF.md`, con su
+     progreso;
+   - las sesiones del proyecto, cada una con su botón para continuarla.
+3. **Detalle de agente**: línea de tiempo con mensajes, comandos y
+   herramientas, en directo si el agente está trabajando.
+4. **Terminal en el navegador**:
+   - continuar una sesión cerrada (`claude --resume <id>`,
+     `codex resume <id>`);
+   - abrir una sesión nueva de Claude o de Codex en un proyecto de
+     cualquier máquina;
+   - volver a entrar en las sesiones abiertas desde el panel.
+
+   Debe funcionar también desde el móvil, con una barra de teclas extra:
+   Esc, Ctrl, Tab y flechas.
+5. **Actualización en tiempo real** sin recargar la página.
+
+## 3. Fuera de esta versión (después)
+
+- Un estado "necesita permiso" fiable. Requiere añadir hooks de Claude Code
+  a la configuración de cada máquina, y Pedro tiene que aprobar ese cambio
+  antes.
+- Notificaciones push: "te necesita", "terminado", "PR abierto".
+- Enviar mensajes a una sesión **abierta en VS Code**. En esta versión se
+  muestra como "abierta en VS Code en <máquina>" y no se puede controlar
+  desde el panel (ver §6.4).
+- Crear git worktrees desde el panel. Plantillas tipo "Implementar issue".
+- Unir en una sola ficha el mismo repo clonado en varias máquinas. En esta
+  versión sale una tarjeta por máquina.
+- Ver PRs consultando GitHub. Lo que sí se usa son los PR que ya aparecen en
+  los transcripts (entradas `pr-link`).
 
 ## 4. Lo que no debe pasar (anti-objetivos)
 
-- **Que el panel exponga credenciales.** No debe leer ni servir nunca
-  `~/.codex/auth.json`, ficheros `*.key`, `.env*`, `client_secret*` ni
-  nada de `~/.claude/session-env`. Si una ruta pedida acaba ahí (también
-  tras resolver symlinks y `..`), se rechaza.
-- **Que sea accesible desde fuera de la máquina.** Escucha solo en
-  `127.0.0.1`. Además, rechaza peticiones cuya cabecera `Host` no sea
-  `127.0.0.1:<puerto>` o `localhost:<puerto>`, para cerrar el DNS
-  rebinding.
-- **Que estropee el estado de las herramientas.** La base de datos de Codex
-  se abre en solo lectura. Nunca se escribe en `~/.claude` ni en `~/.codex`.
-- **Que se vuelva lento.** Los transcripts de Claude pasan de 20 000
-  líneas. Nunca se cargan enteros en memoria: se lee la cola del fichero
-  (últimos N eventos) y se pagina hacia atrás bajo demanda.
-- **Que dependa de la nube.** Todo funciona sin conexión a internet.
+Un panel que abre terminales en tres máquinas da **control total** sobre
+ellas. Por eso:
 
-## 5. Fuentes de datos (verificadas en la máquina el 2026-10-19)
+- **Nunca debe ser accesible desde internet.** Solo se llega a él a través
+  de la red privada de Tailscale (§5.3).
+- **Nadie debe poder abrir un terminal sin autenticarse dos veces**: tiene
+  que estar dentro de la red Tailscale de Pedro **y** haber iniciado sesión
+  en el panel (§7).
+- **Nunca debe exponer credenciales.** No lee ni envía:
+  - `~/.codex/auth.json`;
+  - ficheros `*.key`;
+  - `.env*`;
+  - `client_secret*`;
+  - `~/.claude/session-env`.
 
-### 5.1 Proyectos
+  Esto también vale tras resolver symlinks y `..`. Los secretos que aparezcan
+  dentro de transcripts o de la salida de comandos se enmascaran (§7).
+- **Nunca debe estropear el estado de las herramientas.** La base de datos
+  de Codex se abre en solo lectura y nunca se escribe en `~/.claude` ni en
+  `~/.codex`.
+- **No debe ser lento.** Los transcripts pasan de 20 000 líneas. Se lee la
+  cola del fichero y se pagina hacia atrás bajo demanda; nunca se carga
+  entero.
+- **No debe duplicar una sesión viva.** Si una sesión sigue abierta en otro
+  sitio, porque su `pid` está vivo, el panel no ofrece "continuar".
 
-Se descubren uniendo dos fuentes:
+## 5. Arquitectura
 
-- **Escaneo de carpetas raíz** configurables. Por defecto `~/Desktop` y
-  `~/Downloads`, con profundidad 2. Cuenta como proyecto toda carpeta que
-  tenga `.git`. Hoy salen 9, entre ellos `Proyectos IA/tech-study-tracker`,
-  `Proyectos IA/codebase-memory-local`, `Desktop/Apuntes`,
-  `Downloads/Apuntes`, `javascript-proyectos`…
-- **Proyectos de confianza de Codex**: las claves `[projects."<ruta>"]` de
-  `~/.codex/config.toml`. Se **excluyen** las rutas bajo `/private/tmp` o
-  `/tmp`, el propio `$HOME` y las rutas que ya no existen.
+### 5.1 Piezas
 
-Un fichero `centro-agentes.config.json` en la raíz del repo permite cambiar
-las carpetas raíz, ocultar proyectos y fijar el puerto. Ese fichero no se
-versiona; en su lugar se versiona un `centro-agentes.config.example.json`.
+```
+ MacBook ─┐                      ┌──────────── Mac mini ─────────────┐
+ Windows ─┼─ agente ──WSS──────▶ │  hub (web + API + relay)  agente  │ ◀── navegador
+ Mac mini ┘  (conexión saliente) └───────────────────────────────────┘     (portátil, móvil)
+            todo por la red privada de Tailscale
+```
 
-Por cada proyecto se obtiene, ejecutando `git` con `execFile` (nunca con un
-shell) y un timeout:
+- **Agente** (`agente/`): proceso Node que corre en **cada una** de las tres
+  máquinas, también en el Mac mini. Hace cuatro cosas:
+  - lee las fuentes locales (§6);
+  - manda al hub una **instantánea** cada 5 s y eventos cuando algo cambia;
+  - responde a las peticiones del hub (historial, ficha de proyecto, página
+    de línea de tiempo);
+  - abre y gestiona los **terminales** (§6.4).
 
-- rama actual;
-- último commit (hash corto, mensaje, fecha relativa);
-- número de ficheros modificados o sin seguimiento (`status --porcelain`);
-- commits por delante o por detrás del upstream, si lo hay;
-- ramas locales;
-- si existe `HANDOFF.md` en la raíz o en la carpeta padre (como en
-  `Proyectos IA/HANDOFF.md`), su contenido y el primer punto de su sección
-  "LO QUE FALTA" o equivalente, si se puede detectar. Si no se detecta, se
-  muestra el primer encabezado.
+  La conexión con el hub la abre siempre el agente (WebSocket saliente), así
+  que ninguna máquina abre puertos. Si se corta, reconecta con backoff.
+- **Hub** (`hub/`): proceso Node en el **Mac mini**. Hace cuatro cosas:
+  - sirve el front;
+  - mantiene la última instantánea de cada máquina en memoria y en SQLite;
+  - reenvía las peticiones del navegador al agente que toca;
+  - hace de **puente** del terminal entre el navegador y el agente.
 
-### 5.2 Sesiones de Claude Code
+  Escucha solo en `127.0.0.1` y se publica en la red Tailscale con
+  `tailscale serve`, que además le da HTTPS con certificado válido
+  (`https://<mac-mini>.<tailnet>.ts.net`).
+- **Front** (`web/`): Vite + React + TypeScript, con xterm.js para el
+  terminal. Es responsive y se usa también en el móvil.
 
-- **Sesiones vivas**: `~/.claude/sessions/<pid>.json`. Campos que se usan:
-  `pid`, `sessionId`, `cwd`, `name` (p. ej. `apuntes-ab`), `status`
-  (`idle` | `busy`), `entrypoint` (`claude-vscode`, cli…), `startedAt` y
-  `updatedAt` (ms). Hay que comprobar que el `pid` sigue vivo
-  (`process.kill(pid, 0)`). Si no lo está, la sesión se marca como
-  "cerrada" y no como "activa".
-- **Historial y transcript**: `~/.claude/projects/<slug>/<sessionId>.jsonl`.
-  El `<slug>` es el `cwd` con `/` y espacios cambiados por `-`
-  (p. ej. `-Users-pedroleridanieto-Desktop-Proyectos-IA`). Cada línea es un
-  JSON con un `type`. Para la línea de tiempo solo interesan `user` y
-  `assistant` (texto y nombres de herramientas usadas) y `ai-title` (título
-  de la sesión). Los demás tipos se ignoran. Las sesiones pasadas salen de
-  listar esos `.jsonl`.
-- Los ficheros `*.key` de `~/.claude/sessions/` **no se leen nunca**.
+### 5.2 Tecnología (decisión de Claude)
 
-### 5.3 Codex
+- **Node 22.13 o superior y TypeScript** en las tres piezas. Es el mismo
+  lenguaje en Mac y Windows y Codex lo maneja bien. En Node 22.13+
+  `node:sqlite` ya no necesita flag; en el MacBook hay 22.12, así que hay
+  que actualizarlo.
+- **Terminales**: `node-pty`.
+  - En macOS cada sesión corre dentro de **`tmux`**, que hay que instalar
+    con `brew install tmux` en los dos Mac. Así sobrevive a reinicios del
+    agente y del hub.
+  - En Windows corre directamente en ConPTY. La sesión vive mientras el
+    agente esté en marcha, y se acepta así.
+- **Protocolo agente ↔ hub**: mensajes JSON sobre WebSocket, tipados con
+  esquemas compartidos (`compartido/`) y validados al recibirlos. Los tres
+  tipos de mensaje son instantánea, evento y petición/respuesta con
+  `requestId`. Los datos del terminal van por un canal binario separado,
+  identificado por `terminalId`.
+- **Monorepo** con workspaces de npm: `compartido/`, `agente/`, `hub/` y
+  `web/`.
 
-- **Hilos**: tabla `threads` de `~/.codex/state_5.sqlite`, abierta en solo
-  lectura. Columnas que se usan: `id`, `title`, `cwd`, `model`,
-  `reasoning_effort`, `tokens_used`, `git_branch`, `source` (`vscode`,
-  `exec`, o JSON como `{"subagent":…}`), `archived`, `updated_at_ms`,
-  `created_at_ms` y `rollout_path`. El nombre del fichero lleva versión
-  (`state_5`), así que se busca el `state_*.sqlite` con el número más alto.
-- **Línea de tiempo de un hilo**: el `.jsonl` que indica `rollout_path`,
-  bajo `~/.codex/sessions/AAAA/MM/…`.
-- **Tareas lanzadas con `codex-task.sh`**: los `<proyecto>/.codex-logs/*.jsonl`
-  de cada proyecto descubierto. La primera línea es
-  `{"type":"task_meta","effort","model","prompt"}` y le siguen eventos de
-  `codex exec --json`: `thread.started`, `turn.started`, `turn.completed`,
-  `item.started` e `item.completed`, con `item.type` en `agent_message`,
-  `command_execution`, etc. Una tarea está **en curso** si su log cambió
-  hace menos de 2 minutos y todavía no tiene `turn.completed`.
+### 5.3 Red: Tailscale
 
-### 5.4 Cómo se asigna un agente a un proyecto
+- Tailscale se instala en el MacBook, el Mac mini, el Windows y el móvil de
+  Pedro. Es gratis para uso personal y funciona igual en casa que fuera.
+- Instalarlo y entrar con su cuenta lo hace **Pedro**. El builder solo
+  documenta los pasos en el README.
 
-Se asigna por el `cwd` del agente: gana el proyecto cuya ruta sea el prefijo
-más largo de ese `cwd`. Si ningún proyecto encaja, el agente va al grupo
-"Sin proyecto".
+### 5.4 Arranque y reinicios (respuesta de Pedro y decisión de Claude)
 
-### 5.5 Reglas de modelo de datos (decisiones de Claude, tras la revisión del builder)
+Pedro: el Mac mini y el Windows **se quedan en la pantalla de contraseña**
+al arrancar, no tienen inicio de sesión automático. Decisión: **se mantiene
+así**. No se activa el inicio automático ni se usan servicios de sistema
+que corran antes de iniciar sesión, porque necesitarían otra forma de pasar
+credenciales y chocarían con §4.
 
-- **Una tarea de `codex-task.sh` es un solo agente.** Su log en
-  `.codex-logs` y su hilo `source=exec` de la base de datos se unen por el
-  id de `thread.started`. Para el estado y la línea de tiempo manda el log
-  de la tarea; el modelo, el esfuerzo y los tokens salen de la base de
-  datos. Los hilos `exec` que no tengan log se muestran solo con los datos
-  de la base de datos, usando su rollout como línea de tiempo.
-- **Estados de Codex**: "en curso" si la última actividad (mtime del log o
-  del rollout, o `updated_at_ms`) fue hace menos de 2 min y no hay
-  `turn.completed`. "Terminado" si hay `turn.completed`. "Interrumpido" si
-  no hay `turn.completed` y lleva más de 2 min sin actividad. Los hilos de
-  VS Code usan la misma regla sobre su rollout y también tienen línea de
-  tiempo en directo.
-- **Subagentes**: los hilos de Codex con `source={"subagent":…}` y los
-  transcripts de subagentes de Claude van **anidados bajo su agente
-  padre**. No aparecen como filas propias ni cuentan en Inicio. Si no se
-  puede encontrar el padre, van a "Sin proyecto" con una etiqueta de
-  subagente.
-- **`HANDOFF.md` compartido**: si un `HANDOFF.md` de la carpeta padre tiene
-  secciones `## …` cuyo título contiene el nombre de carpeta del proyecto
-  (p. ej. `## 1. tech-study-tracker — …`), ese proyecto muestra solo su
-  sección. Si no las tiene, se muestra el documento entero.
-- **Rutas**: la API **no acepta rutas de fichero**, solo ids de proyecto o
-  de agente. La protección de rutas se aplica a las que calcula el propio
-  servidor (`rollout_path`, `HANDOFF.md`, logs, transcripts), en dos capas:
-  1. **lista permitida**: solo bajo las carpetas raíz de proyectos,
-     `~/.claude/projects`, `~/.claude/sessions/*.json` y `~/.codex/sessions`;
-  2. **lista prohibida** (§4), comprobada después de `realpath`.
+- **Cómo arrancan las piezas**:
+  - en macOS, el agente y el hub son **LaunchAgents de usuario** que
+    arrancan al iniciar sesión;
+  - en Windows, el agente es una tarea programada "al iniciar sesión".
+- **Reinicio del MacBook o del Windows**: el hub sigue en pie y muestra esa
+  máquina como **"Desconectada · ¿reiniciada? Inicia sesión en ella"**,
+  junto a la hora de su último latido.
+- **Reinicio del Mac mini**: el panel entero queda inaccesible hasta que
+  Pedro inicie sesión en él. Se acepta porque es raro (actualizaciones).
+  - El README explica cómo dejar el Mac mini listo para este caso:
+    "Arrancar automáticamente tras un corte de luz" y que el hub y el agente
+    vuelvan solos al iniciar sesión.
+  - El README también documenta como **opcional** una mejora: instalar
+    `tailscaled` como servicio de sistema y activar Compartir pantalla.
+    Así Pedro podría iniciar sesión en el Mac mini a distancia después de un
+    reinicio. Esto no forma parte del trabajo del builder.
+- **Permisos de privacidad de macOS**: la primera vez, Pedro concede desde
+  el escritorio de cada Mac el acceso a Escritorio, Documentos y Descargas
+  al proceso del agente (o a `node`). El README indica dónde hacerlo.
+- **En el panel**: cada máquina muestra su último latido. La vista general
+  avisa arriba si alguna está desconectada.
 
-  Si una ruta calculada no pasa el filtro, el endpoint responde 403. Se
-  prueba con tests unitarios del guardián y con un test de endpoint que
-  usa un fixture cuyo `rollout_path` apunta a `auth.json`.
-- **Secretos dentro de transcripts**: antes de servir una línea de tiempo
-  se enmascaran los patrones habituales: `sk-…`, `ghp_…`/`github_pat_…`,
-  JWT `eyJ…`, `AKIA…`, cabeceras `Authorization:` y líneas `CLAVE=valor`
-  cuyo nombre contenga KEY, SECRET, TOKEN o PASSWORD. En la v1 no hay
-  forma de desactivarlo. Tiene sus propios tests.
+## 6. Qué lee y hace el agente en cada máquina
 
-## 6. Pantallas
+Las rutas base dependen del sistema: `~` en macOS y `%USERPROFILE%` en
+Windows. Todo lector recibe sus rutas inyectadas, para poder probarlo con
+fixtures. Si en una máquina no existe `~/.claude` o `~/.codex`, el agente lo
+indica en su instantánea y el panel lo muestra ("no encuentro Codex en esta
+máquina"), en vez de dejarla vacía sin explicación.
 
-1. **Inicio**: una fila por proyecto. Aparecen primero los que tienen
-   agentes activos y después los demás, del más reciente al más antiguo.
-   Cada fila muestra el nombre, la rama, el último commit, un indicador de
-   cambios sin commitear, los agentes activos (iconos distintos para Claude
-   y Codex, con estado) y la primera línea pendiente del handoff.
-2. **Agentes**: tabla con tipo (Claude o Codex), nombre o título, proyecto,
-   estado (Claude: ocupado, inactivo, cerrado; Codex: en curso, terminado,
-   interrumpido), modelo y
-   esfuerzo (en Codex), tokens (en Codex) y última actividad. Filtros por
-   tipo, proyecto y estado. Por defecto muestra lo de los últimos 7 días.
-3. **Detalle de agente**: cabecera con los metadatos y, debajo, la línea de
-   tiempo de eventos (mensajes, comandos con su salida plegada, nombres de
-   herramientas). Si el agente está activo, la línea de tiempo se actualiza
-   en directo y se puede seguir el final automáticamente. Hay un botón
-   "cargar anteriores" para paginar hacia atrás.
-4. **Ficha de proyecto**: git (rama, ramas locales, últimos 10 commits,
-   cambios), agentes de ese proyecto (activos e históricos) y el
-   `HANDOFF.md` renderizado como Markdown **saneado**, sin HTML crudo.
+Las fuentes de las secciones 6.1 a 6.3 se comprobaron en el MacBook el
+2026-10-19. En Windows se asume la misma estructura bajo `%USERPROFILE%`, y
+el builder debe verificarlo allí antes de cerrar la fase de Windows.
 
-La interfaz va en **español**, con modo claro y oscuro según el sistema, y
-debe funcionar bien en pantalla de portátil. El uso en móvil no es
-prioritario.
+### 6.1 Proyectos
 
-## 7. Arquitectura (decisión de Claude, no de Pedro)
+- **Escaneo de carpetas raíz** configurable por máquina en
+  `agente.config.json`, que no se versiona; sí se versiona un `.example`.
+  - **Por defecto**: `~/Desktop`, `~/Downloads` y `~/Documents`, con
+    profundidad 2.
+  - **Qué cuenta como proyecto**: toda carpeta con `.git`.
+- Se le suman los proyectos de confianza de Codex: las claves
+  `[projects."<ruta>"]` de `~/.codex/config.toml`. Se excluyen:
+  - las rutas bajo `/tmp`, `/private/tmp` o la carpeta temporal de Windows;
+  - el propio home;
+  - las rutas que ya no existen.
+- **Agrupación**: los proyectos se agrupan por su carpeta padre (Downloads,
+  Proyectos IA, Desktop…). Los que llevan 30 días sin actividad se muestran
+  en pequeño al final.
+- **Datos de git** de cada proyecto, ejecutando `git` con `execFile`, nunca
+  con un shell, y con timeout:
+  - rama actual;
+  - último commit;
+  - ficheros modificados o sin seguimiento;
+  - commits por delante o por detrás del upstream;
+  - ramas locales;
+  - actividad por día de los últimos 14 días.
 
-- **Repo propio**: `~/Desktop/Proyectos IA/centro-agentes`, privado en
-  GitHub (`pedroleni/centro-agentes`).
-- **Servidor**: Node 22 + TypeScript. Para el SQLite se usa el `node:sqlite`
-  que trae Node, con `--experimental-sqlite` en Node 22.12, en vez de
-  `better-sqlite3`. Así no hay módulos nativos que compilar, y Codex no
-  tiene red para instalarlos. La API es HTTP JSON bajo `/api/*` más un
-  endpoint SSE `/api/agents/:id/stream` para la línea de tiempo en directo
-  (vigilando el fichero con `fs.watch` y relectura incremental desde el
-  último offset). El framework HTTP queda a criterio del builder; lo ideal
-  es mínimo, como Hono o `node:http`.
-- **Front**: Vite + React + TypeScript. Las listas se refrescan con polling
-  cada 5 s y la línea de tiempo abierta usa SSE.
-- **Producción local**: un solo comando (`npm start`) compila el front y lo
-  sirve desde el mismo servidor. El puerto por defecto es **4600**, para no
-  chocar con el monitor de Codex (4545).
-- **Capa de lectores**: un módulo por fuente (`proyectos`, `git`,
-  `claudeSessions`, `claudeTranscript`, `codexThreads`, `codexLogs`,
-  `handoff`). Cada uno recibe sus rutas base inyectadas, para poder
-  probarlo con fixtures en vez de con el `$HOME` real.
-- **Tests**: Vitest. Cada lector tiene tests con fixtures **sintéticos**
-  (nada copiado de los ficheros reales de Pedro). También hay tests de la
-  lista de rutas prohibidas (incluido escapar con `..` y con symlinks) y del
-  rechazo por cabecera `Host`.
+### 6.2 Sesiones de Claude Code
+
+- **Sesiones vivas**: `~/.claude/sessions/<pid>.json`. Campos usados:
+  - `pid`, `sessionId`, `cwd`, `name`;
+  - `status` (`idle` o `busy`);
+  - `entrypoint` (`claude-vscode` o cli);
+  - `startedAt` y `updatedAt`.
+
+  Si el `pid` está vivo, `busy` se muestra como "Trabajando" e `idle` como
+  "Esperándote". Si el `pid` está muerto, la sesión se muestra como
+  "Cerrada". Los ficheros `*.key` de esa carpeta **no se leen nunca**.
+- **Transcripts**: `~/.claude/projects/<slug>/<sessionId>.jsonl`. El slug es
+  el `cwd` con `/`, espacios y otros caracteres no alfanuméricos cambiados
+  por `-`, pero para encontrar el fichero conviene buscar
+  `*/<sessionId>.jsonl`. Tipos de línea que se usan:
+  - `ai-title`: el título;
+  - `last-prompt`: el último mensaje de Pedro;
+  - `user` y `assistant`: la línea de tiempo;
+  - `pr-link`: el PR;
+  - `gitBranch`: la rama, cuando la línea lo trae.
+- **Contexto usado**: se toma el `usage` del último mensaje `assistant`
+  (`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`)
+  y se divide entre la ventana de contexto del modelo. Esa ventana sale de
+  una tabla configurable; si el modelo no está en ella, se muestran los
+  tokens sin porcentaje.
+- **Tareas de sesión**: la última llamada `TodoWrite` del transcript da la
+  lista de tareas de esa sesión.
+
+### 6.3 Codex
+
+- **Hilos**: tabla `threads` del `state_<N>.sqlite` de número más alto, en
+  `~/.codex/`, abierta en solo lectura. Columnas usadas:
+  - `id`, `title`, `cwd`;
+  - `model`, `reasoning_effort`, `tokens_used`;
+  - `git_branch`, `source`, `archived`;
+  - `created_at_ms`, `updated_at_ms`, `rollout_path`.
+- **Línea de tiempo y contexto**: el `.jsonl` de `rollout_path`. Sus eventos
+  `token_count` traen `model_context_window`, que da el porcentaje de
+  contexto.
+- **Tareas lanzadas con `codex-task.sh`**: los
+  `<proyecto>/.codex-logs/*.jsonl`. La primera línea es `task_meta` y luego
+  vienen eventos de `codex exec --json`. Se unen con su hilo `source=exec`
+  por el id de `thread.started`: para el estado y la línea de tiempo manda
+  el log, y para el modelo y los tokens manda la base de datos.
+- **Estados**:
+  - **En curso**: hubo actividad hace menos de 2 min y aún no hay
+    `turn.completed`.
+  - **Terminado**: hay `turn.completed`.
+  - **Interrumpido**: no hay `turn.completed` y lleva más de 2 min sin
+    actividad.
+
+- **Sesiones interactivas de Codex abiertas** (decisión de Claude): Codex no
+  tiene un fichero por `pid`. El agente busca los procesos `codex` que estén
+  en marcha:
+  - en macOS, con `ps` y con `lsof -a -d cwd -p <pid>` para saber su `cwd`;
+  - en Windows, con `Get-CimInstance Win32_Process` y su línea de comandos.
+
+  Si un proceso `codex` interactivo (no `exec`) está vivo en el `cwd` de un
+  hilo y ese hilo es el más reciente de ese `cwd` desde que arrancó el
+  proceso, el hilo se marca como **"Abierto"**. Aparece entonces como
+  "Esperándote", o como "Trabajando" si su rollout cambió hace menos de
+  30 s, y no se ofrece "continuar". Si no se puede emparejar con seguridad,
+  se trata como abierto cualquier hilo de ese `cwd` actualizado desde que
+  arrancó el proceso. Ante la duda, se prefiere no ofrecer "continuar" antes
+  que duplicar una sesión.
+
+### 6.4 Terminales: continuar y abrir sesiones
+
+| Caso | Qué hace el panel |
+|---|---|
+| Sesión **cerrada** de Claude | "Continuar aquí": abre un terminal en esa máquina, en el `cwd` de la sesión, y ejecuta `claude --resume <sessionId>` |
+| Hilo **cerrado** de Codex | igual, con `codex resume <id>` |
+| Sesión **viva fuera del panel** (VS Code u otra terminal) | No ofrece continuar. Muestra "Abierta en VS Code en <máquina>" |
+| Sesión **abierta desde el panel** | "Entrar": se vuelve a conectar al mismo terminal, desde cualquier dispositivo |
+| **Nueva** sesión | Se elige máquina, proyecto y agente (Claude o Codex) y se ejecuta `claude` o `codex` en la carpeta del proyecto |
+
+- Los terminales del panel se identifican así:
+  - en macOS, con sesiones `tmux` llamadas `ca-<id>`;
+  - en Windows, con un registro en memoria del agente.
+
+  El agente los incluye en su instantánea.
+- Al abrir un terminal, el panel avisa de que es una sesión **real** en esa
+  máquina, con los permisos que tenga el agente.
+- El agente nunca ejecuta comandos libres que mande el hub. Solo hay tres
+  operaciones cerradas:
+  - `resume(tipo, id)`;
+  - `nueva(tipo, proyectoId)`;
+  - `adjuntar(terminalId)`.
+
+  El hub envía **ids**, nunca rutas ni comandos, y el agente resuelve él
+  mismo las rutas a partir de su propio escaneo. Lo que Pedro escribe dentro
+  del terminal es otra cosa: eso sí va tal cual al proceso.
+
+### 6.5 Cómo se asigna un agente a un proyecto
+
+1. **Por `cwd`**: gana el proyecto cuya ruta es el prefijo más largo.
+2. **Si el `cwd` no es un proyecto** (por ejemplo, la carpeta padre
+   `Proyectos IA`), se usan las rutas de los ficheros que tocó la sesión
+   (`file_path` de sus llamadas Edit y Write). Se asigna al proyecto o
+   proyectos donde editó. Así una sesión abierta en `Proyectos IA` que
+   trabajó en `tech-study-tracker` aparece en ese proyecto.
+3. **Si no hay nada de lo anterior**, va a "Sin proyecto".
+
+### 6.6 Historial y tareas de un proyecto
+
+- **Historial**: los commits (`git log`) y las sesiones de Claude y Codex,
+  ordenados por tiempo y agrupados por día. Un commit se cuelga bajo la
+  sesión que lo hizo si la sesión ejecutó `git commit` en ese repo dentro de
+  su intervalo de tiempo. Si no se puede saber, aparece suelto.
+- **Tareas**:
+  - planes en `docs/superpowers/plans/*.md`, con la fecha del nombre del
+    fichero y el progreso contando `- [x]` frente a `- [ ]`;
+  - el `HANDOFF.md` del proyecto o de su carpeta padre. Si está en la padre
+    y tiene secciones con el nombre del proyecto, solo se muestra esa
+    sección. Si es más antiguo que los últimos commits, se avisa de que
+    puede estar desactualizado;
+  - las listas `TodoWrite` de las sesiones recientes.
+
+## 7. Seguridad
+
+- **Red**: el hub escucha solo en `127.0.0.1` y únicamente `tailscale serve`
+  lo publica, solo dentro de la red Tailscale. Nunca se usa `tailscale
+  funnel`.
+- **Entrar al panel**: hacen falta dos cosas.
+  1. Que la cabecera `Tailscale-User-Login`, que pone `tailscale serve`,
+     coincida con la cuenta de Pedro configurada en el hub.
+  2. Una **contraseña** guardada con hash (scrypt o argon2) que da una
+     cookie de sesión `HttpOnly`, `Secure` y `SameSite=Strict`.
+
+  Las peticiones que cambian algo, entre ellas abrir un terminal, también
+  comprueban `Origin`. El WebSocket del navegador comprueba la cookie y el
+  `Origin` al conectarse.
+- **Máquinas**: cada agente se da de alta con un **código de un solo uso**
+  que se genera en el panel ("Añadir máquina") y caduca a los 10 minutos.
+  El hub le devuelve un token propio, guarda solo su hash y permite
+  revocarlo.
+- **Rutas**: la API y el protocolo nunca aceptan rutas, solo ids. El agente
+  aplica una lista permitida (carpetas raíz de proyectos, `~/.claude/projects`,
+  `~/.claude/sessions/*.json`, `~/.codex/sessions`) y la lista prohibida de
+  §4, después de `realpath`.
+- **Secretos en la salida**: antes de enviar una línea de tiempo se
+  enmascaran estos patrones:
+  - `sk-…`, `ghp_…`, `github_pat_…`, JWT `eyJ…` y `AKIA…`;
+  - cabeceras `Authorization:`;
+  - líneas `CLAVE=valor` cuyo nombre contenga KEY, SECRET, TOKEN o PASSWORD.
+
+  Lo que se ve dentro del terminal en vivo **no** se enmascara, porque es
+  la sesión real.
+- **Registro de auditoría** en el hub: quién abrió qué terminal, en qué
+  máquina, desde qué dispositivo y cuándo. Se ve en una pantalla de ajustes.
 
 ## 8. Forma de trabajo: Claude planifica, Codex implementa
 
-- **Claude** escribe este diseño y el plan por fases, elige el modelo y el
-  esfuerzo de Codex para cada tarea, instala las dependencias (Codex no
-  tiene red), crea las ramas, ejecuta `test`, `build` y `lint` por su
-  cuenta, verifica la interfaz con Playwright, revisa el código y hace los
-  commits, pushes y PRs.
-- **Codex** implementa cada fase a partir de un prompt concreto, con
-  `codex exec --sandbox workspace-write --json`, y escribe sus propios
-  tests.
-- El repo lleva **su propio** `scripts/dev/codex-task.sh`,
-  `scripts/dev/codex-monitor.mjs` y `AGENTS.md`, adaptados de
-  tech-study-tracker. No se reutiliza el de otro repo. Cada vez que se lanza
-  Codex se le da a Pedro la URL del monitor, y antes se comprueba que está
+- **Claude**:
+  - escribe el diseño y el plan por fases;
+  - elige el modelo y el esfuerzo de Codex para cada tarea;
+  - **instala las dependencias** (Codex no tiene red);
+  - crea las ramas;
+  - ejecuta él mismo `test`, `build` y `lint`;
+  - hace las **pruebas de integración** que abren puertos o sockets (Codex
+    no puede abrir puertos en su sandbox de macOS);
+  - verifica la interfaz con Playwright;
+  - revisa el código y hace commits, pushes y PRs.
+- **Codex** implementa cada fase a partir de un prompt concreto, con su
+  lógica pura y sus tests unitarios.
+- El repo lleva su propio `scripts/dev/codex-task.sh`,
+  `scripts/dev/codex-monitor.mjs` y `AGENTS.md`. Cada vez que se lanza
+  Codex se le da a Pedro la URL del monitor, después de comprobar que está
   escuchando.
-- **Commits**: sin coautoría de Claude, ni `Co-Authored-By` ni "Generated
-  with Claude Code". Se trabaja en ramas y se integra en `main` mediante PR.
-- El repo sigue **privado** hasta que Pedro diga lo contrario.
+- **Commits sin ninguna coautoría de Claude.** Se trabaja en ramas y se
+  integra mediante PR. El repo sigue **privado**.
+- **Trabajo en otras máquinas**: lo que haya que hacer en el Mac mini o en
+  el Windows (instalar Tailscale, tmux o Node, clonar el repo, dar de alta
+  el agente) lo hace Pedro siguiendo pasos que Claude deja escritos en el
+  README. Claude no tiene acceso a esas máquinas.
 
-## 9. Lo que queda a criterio del builder
+## 9. Fases (sugeridas; el plan las detalla)
 
-- El framework HTTP, el router del front, el estilo visual y los
-  componentes.
-- El formato exacto de la API JSON.
-- La heurística para extraer "lo pendiente" de un `HANDOFF.md`, siempre que
-  degrade a mostrar el primer encabezado.
-- El tamaño de página de la línea de tiempo (sugerencia: 200 eventos).
+1. **Base y lectores**: monorepo, esquemas compartidos, los lectores de §6.1
+   a §6.3 con fixtures sintéticos para macOS y Windows, y la lista
+   permitida y prohibida.
+2. **Hub y agente sin terminal**: conexión WSS, alta de máquinas, inicio de
+   sesión, instantáneas y **vista general por máquina** funcionando con el
+   MacBook. Se despliega en el Mac mini con `tailscale serve`.
+3. **Ficha de proyecto y detalle de agente**: historial, tareas y línea de
+   tiempo en vivo.
+4. **Terminal en el navegador** en los Mac (tmux): continuar, nueva sesión,
+   entrar y barra de teclas para el móvil.
+5. **Windows**: agente y terminal ConPTY, verificados por Pedro en su
+   máquina.
 
-## 10. Cuándo está terminada la v1
+## 10. Lo que queda a criterio del builder
 
-- `npm start` levanta el panel en `http://127.0.0.1:4600` y en Inicio
-  aparecen los proyectos reales de la máquina, con su estado de git.
-- Las sesiones de Claude Code abiertas salen como activas u ocupadas y, al
-  cerrar una, pasan a "cerrada" en menos de 10 s.
-- Una tarea lanzada con `codex-task.sh` en cualquier proyecto se ve en
-  directo en el detalle de agente.
-- Los hilos de Codex aparecen con su modelo, su esfuerzo y sus tokens.
-- Un agente cuyo fichero calculado cae fuera de la lista permitida, o
-  dentro de la prohibida, devuelve 403. Una petición con `Host: evil.com`
-  también se rechaza. Los secretos de los transcripts salen enmascarados.
-- `test`, `build` y `lint` pasan, y Claude ha hecho la verificación visual
-  con Playwright.
+- El framework HTTP, el router del front, la librería de WebSocket y el
+  formato exacto de los mensajes, siempre que estén tipados y validados.
+- Cómo se arranca el agente como servicio: launchd en macOS y una tarea
+  programada o equivalente en Windows.
+- La heurística de "lo pendiente" en el `HANDOFF.md`, que si falla muestra
+  el primer encabezado.
+- El tamaño de página de la línea de tiempo (sugerencia: 200 eventos) y la
+  tabla de ventanas de contexto por modelo.
+- El estilo visual fino, mientras respete la maqueta `estilo-tarjetas-v2`.
+
+### Qué es la maqueta y qué no (decisión de Claude)
+
+La maqueta define el **estilo visual** y la **disposición** de la vista
+general y de la ficha. **La lista de funciones es la de §2.** La maqueta se
+hizo antes de que hubiera varias máquinas, así que la vista general tiene
+que añadir los **bloques por máquina** de §2.1, al estilo de la captura de
+AI Beacon. Sobre los elementos de la maqueta que §2 no menciona:
+
+- **Buscador y chips de filtro**: sí entran, pero filtrando **en el
+  navegador** sobre las instantáneas ya recibidas (nombres de proyectos y
+  sesiones, ramas). No buscan en commits ni consultan a las máquinas.
+- **Pestaña "Ramas"**: sí entra, con las ramas locales que ya manda §6.1.
+- **"Abrir en VS Code"** y **chip "🔒 privado"**: no entran.
+- **"Nueva tarea Codex"**: se refiere a la **nueva sesión interactiva** de
+  Codex de §6.4. No es un `codex exec` con un prompt escrito, así que el
+  agente sigue aceptando solo las tres operaciones cerradas.
+
+## 11. Cuándo está terminado
+
+- Desde el portátil y desde el móvil, a través de Tailscale, se entra al
+  panel con contraseña y se ven las **tres máquinas**, cada una con sus
+  proyectos y agentes reales.
+- Sin estar en la red Tailscale no se llega al panel. Estando en ella pero
+  sin contraseña no se ve nada ni se abre ningún terminal.
+- Una sesión de Claude o Codex abierta en cualquier máquina aparece en
+  menos de 10 s con su estado y su porcentaje de contexto. Al cerrarla,
+  pasa a "Cerrada".
+- Desde el móvil se puede continuar una sesión cerrada de Claude en el Mac
+  mini, escribir en ella, cerrar la pestaña, volver a abrirla y seguir en
+  el mismo terminal.
+- En la ficha de tech-study-tracker se ven su historial real, sus planes con
+  fecha y progreso, y su handoff con el aviso de que puede estar
+  desactualizado.
+- Las pruebas de rutas prohibidas, del `Origin`, de la cookie, de la
+  revocación de tokens y del enmascarado de secretos pasan. `test`, `build`
+  y `lint` pasan, y Claude ha hecho la verificación visual con Playwright.
