@@ -1,6 +1,8 @@
-node_modules/
-dist/
+*.tsbuildinfo
 .codex-logs/
-centro-agentes.config.json
 .env*
 .superpowers/
+agente.config.json
+centro-agentes.config.json
+dist/
+node_modules/

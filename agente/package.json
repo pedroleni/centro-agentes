@@ -1,0 +1,10 @@
+{
+  "name": "@centro/agente",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@centro/compartido": "*",
+    "smol-toml": "^1.9.1"
+  }
+}
