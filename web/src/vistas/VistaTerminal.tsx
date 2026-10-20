@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { useEffect, useRef, useState } from 'react'
 import { cerrarTerminal } from '../api.js'
+import { clavePanel } from '../logica/clavePanel.js'
 import { conCtrl, secuenciaTecla, type Tecla } from '../logica/teclas.js'
 import { estadoTrasCierre, type EstadoTerminal } from '../logica/terminal.js'
 
@@ -15,6 +16,7 @@ const MENSAJES: Record<Exclude<EstadoTerminal, 'conectado'>, string> = {
   desconectada: 'La máquina se ha desconectado',
   'sin-sesion': 'Tu sesión ha caducado: vuelve a entrar',
 }
+const SIN_CLAVE_LOCAL = 'Falta la clave del panel: abre el enlace que muestra npm run panel'
 
 const TECLAS: { tecla: Tecla; etiqueta: string }[] = [
   { tecla: 'Esc', etiqueta: 'Esc' },
@@ -30,11 +32,12 @@ const ESPERAS_MS = [1_000, 2_000, 4_000, 8_000]
 // Terminal real de una máquina en el navegador: xterm.js conectado por WebSocket
 // al panel local o al hub (mismo protocolo). Si se corta la red reconecta; si la
 // sesión termina o la máquina se desconecta, lo dice y deja de intentarlo.
-export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: {
+export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo, local }: {
   maquinaId: string
   maquinaNombre: string
   terminalId: string
   titulo: string
+  local: boolean
 }) {
   const contenedor = useRef<HTMLDivElement>(null)
   const socket = useRef<WebSocket | null>(null)
@@ -78,7 +81,9 @@ export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: 
     function conectar(): void {
       const protocolo = window.location.protocol === 'https:' ? 'wss' : 'ws'
       const url = `${protocolo}://${window.location.host}/api/maquinas/${encodeURIComponent(maquinaId)}/terminales/${terminalId}/ws?cols=${terminal.cols}&rows=${terminal.rows}`
-      const ws = new WebSocket(url)
+      // En el panel local la clave va como subprotocolo: un WebSocket no admite cabeceras.
+      const clave = clavePanel()
+      const ws = new WebSocket(url, clave === null ? [] : [`clave.${clave}`])
       ws.binaryType = 'arraybuffer'
       socket.current = ws
       ws.onopen = () => {
@@ -116,6 +121,10 @@ export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: 
     // El terminal se crea una vez por terminal abierto.
   }, [maquinaId, terminalId])
 
+  function mensaje(otro: Exclude<EstadoTerminal, 'conectado'>): string {
+    return otro === 'sin-sesion' && local ? SIN_CLAVE_LOCAL : MENSAJES[otro]
+  }
+
   async function cerrar(): Promise<void> {
     if (!window.confirm(`¿Cerrar este terminal? Se terminará "${titulo}" en ${maquinaNombre}.`)) return
     await cerrarTerminal(maquinaId, terminalId).catch(() => undefined)
@@ -130,13 +139,13 @@ export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: 
           <strong>{titulo}</strong>
           <span className="vt-maquina">{maquinaNombre}</span>
         </div>
-        <span className={`vt-estado ${estado}`}>{estado === 'conectado' ? '● Conectado' : MENSAJES[estado]}</span>
+        <span className={`vt-estado ${estado}`}>{estado === 'conectado' ? '● Conectado' : mensaje(estado)}</span>
         <button type="button" className="cd-btn" onClick={() => void cerrar()}>Cerrar terminal</button>
       </header>
       <p className="vt-aviso">Sesión real en {maquinaNombre} · lo que escribas se ejecuta allí</p>
       <div className="vt-terminal" ref={contenedor} />
       {(estado === 'terminado' || estado === 'no-encontrado' || estado === 'desconectada' || estado === 'sin-sesion') && (
-        <p className="vt-fin" role="status">{MENSAJES[estado]} · <a href="#/">Volver al panel</a></p>
+        <p className="vt-fin" role="status">{mensaje(estado)} · <a href="#/">Volver al panel</a></p>
       )}
       <nav className="vt-teclas" aria-label="Teclas especiales">
         {TECLAS.slice(0, 2).map(({ tecla, etiqueta }) => (

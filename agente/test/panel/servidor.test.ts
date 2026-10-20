@@ -34,9 +34,10 @@ async function preparar(maximoEnganches?: number) {
   return { puerto, gestor, id: info.id }
 }
 
-function abrir(url: string, origin: string, cookie = 'ca_panel=clave-de-prueba'): Promise<WebSocket | number> {
+// El navegador manda la clave como subprotocolo (no puede poner cabeceras en un WebSocket).
+function abrir(url: string, origin: string, protocolos: string[] = ['clave.clave-de-prueba'], cookie?: string): Promise<WebSocket | number> {
   return new Promise((resolver) => {
-    const ws = new WebSocket(url, { origin, headers: { Cookie: cookie } })
+    const ws = new WebSocket(url, protocolos, { origin, headers: cookie === undefined ? {} : { Cookie: cookie } })
     ws.on('open', () => resolver(ws))
     ws.on('unexpected-response', (_peticion, respuesta) => resolver(respuesta.statusCode ?? 0))
     ws.on('error', () => resolver(0))
@@ -50,10 +51,13 @@ describe.skipIf(sinEntorno)('WebSocket de terminal del panel local', () => {
     expect(await abrir(`ws://127.0.0.1:${puerto}/api/maquinas/otra/terminales/${id}/ws`, `http://127.0.0.1:${puerto}`)).toBe(404)
   })
 
-  it('sin la clave del panel no se engancha: cierra con 4401 sin abrir el terminal', async () => {
+  it('sin la clave del panel (ni con ella en una cookie) no se engancha: cierra con 4401', async () => {
     const { puerto, id } = await preparar()
-    for (const cookie of ['', 'ca_panel=otra']) {
-      const ws = await abrir(`ws://127.0.0.1:${puerto}/api/maquinas/m1/terminales/${id}/ws`, `http://127.0.0.1:${puerto}`, cookie)
+    // Un subprotocolo ajeno ni siquiera llega a abrirse: el servidor no lo acepta.
+    expect(await abrir(`ws://127.0.0.1:${puerto}/api/maquinas/m1/terminales/${id}/ws`, `http://127.0.0.1:${puerto}`, ['otro'])).toBe(0)
+    const casos: [string[], string | undefined][] = [[[], undefined], [['clave.otra'], undefined], [[], 'ca_panel=clave-de-prueba']]
+    for (const [protocolos, cookie] of casos) {
+      const ws = await abrir(`ws://127.0.0.1:${puerto}/api/maquinas/m1/terminales/${id}/ws`, `http://127.0.0.1:${puerto}`, protocolos, cookie)
       expect(ws).toBeInstanceOf(WebSocket)
       const socket = ws as WebSocket
       let recibido = ''

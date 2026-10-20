@@ -11,9 +11,9 @@ Estado: **fase 4** (terminales en el navegador). Ver `docs/superpowers/`.
 npm run panel        # compila el front y arranca el panel en http://127.0.0.1:4600
 ```
 
-Abre el enlace que imprime al arrancar (`http://127.0.0.1:4600/entrar?clave=…`).
-La clave cambia en cada arranque. Sin ella se ve el panel, pero no se pueden
-abrir terminales.
+Abre el enlace que imprime al arrancar (`http://127.0.0.1:4600/#clave=…`).
+La clave cambia en cada arranque y se guarda solo en ese navegador. Sin ella se
+ve el panel, pero no se pueden abrir terminales.
 
 - **Vista general**: tus proyectos agrupados por carpeta, con las sesiones de
   Claude Code y Codex de cada uno (estado, modelo, contexto usado y tiempo),

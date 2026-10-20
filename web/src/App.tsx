@@ -151,6 +151,7 @@ export function App() {
             maquinaNombre={maquina?.nombre ?? 'la máquina'}
             terminalId={rutaLeida.terminalId}
             titulo={terminal?.titulo ?? tituloReciente(rutaLeida.terminalId) ?? 'Terminal'}
+            local={estado.datos?.modo === 'local'}
           />
         </Suspense>
       )

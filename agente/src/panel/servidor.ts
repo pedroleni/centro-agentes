@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { WebSocketServer } from 'ws'
 import { CIERRE_TERMINAL, MensajeNavegadorTerminal } from '@centro/compartido'
 import type { GestorTerminales } from '../terminales/gestor.js'
-import { COOKIE_PANEL, leerCookie, mismaClave } from './clave.js'
+import { claveDeProtocolos, mismaClave, PREFIJO_PROTOCOLO } from './clave.js'
 import type { Peticion, Respuesta } from './manejador.js'
 
 const LIMITE_CUERPO = 64 * 1024
@@ -51,7 +51,12 @@ export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
   const permitidos = new Set([`127.0.0.1:${opciones.puerto}`, `localhost:${opciones.puerto}`])
   const origenes = new Set([...permitidos].map((host) => `http://${host}`))
   // 64 K caracteres de entrada, aunque todos vengan escapados en el JSON.
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 })
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 512 * 1024,
+    // El navegador exige que se acepte el subprotocolo que pide: el de la clave.
+    handleProtocols: (protocolos) => [...protocolos].find((p) => p.startsWith(PREFIJO_PROTOCOLO)) ?? false,
+  })
   const maximoEnganches = opciones.terminal?.maximoEnganches ?? 16
   let enganches = 0
 
@@ -71,7 +76,7 @@ export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
         url: peticion.url ?? '/',
         host: cabecera(peticion, 'host'),
         origin: cabecera(peticion, 'origin'),
-        cookie: cabecera(peticion, 'cookie'),
+        clave: cabecera(peticion, 'x-clave-panel'),
         cuerpo,
       })
       if (!respuesta.headersSent) {
@@ -106,7 +111,7 @@ export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
       const cols = Number(url.searchParams.get('cols') ?? 80)
       const rows = Number(url.searchParams.get('rows') ?? 24)
       const terminal = opciones.terminal
-      const conClave = mismaClave(leerCookie(cabecera(peticion, 'cookie'), COOKIE_PANEL), terminal.clave)
+      const conClave = mismaClave(claveDeProtocolos(cabecera(peticion, 'sec-websocket-protocol')), terminal.clave)
       wss.handleUpgrade(peticion, socket, cabeza, (ws) => {
         ws.on('error', () => undefined)
         // Sin la clave se cierra con 4401 para que el navegador lo diga y no reintente.

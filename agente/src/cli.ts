@@ -156,7 +156,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
     })
     // El enlace lleva la clave de este arranque: sin él se ve el panel, pero no
     // se pueden abrir terminales.
-    process.stdout.write(`Panel: http://127.0.0.1:${puerto}/entrar?clave=${clave}\n`)
+    process.stdout.write(`Panel: http://127.0.0.1:${puerto}/#clave=${clave}\n`)
     return
   }
 

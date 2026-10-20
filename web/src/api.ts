@@ -1,5 +1,6 @@
 import { Commit, RespuestaMaquinas, TerminalInfo } from '@centro/compartido'
 import { z } from 'zod'
+import { clavePanel } from './logica/clavePanel.js'
 
 const TIEMPO_LIMITE_MS = 8_000
 // La primera instantánea tras arrancar el agente lee los transcripts enteros y
@@ -7,6 +8,12 @@ const TIEMPO_LIMITE_MS = 8_000
 const TIEMPO_LIMITE_INSTANTANEA_MS = 30_000
 // Más que los 10 s que el hub espera a la máquina, para que llegue su 504.
 const TIEMPO_LIMITE_MAQUINA_MS = 15_000
+
+// En el panel local, crear y cerrar terminales exige su clave.
+function cabecerasTerminal(): Record<string, string> {
+  const clave = clavePanel()
+  return clave === null ? {} : { 'X-Clave-Panel': clave }
+}
 
 function opcionesPeticion(limiteMs = TIEMPO_LIMITE_MS): RequestInit {
   return { signal: AbortSignal.timeout(limiteMs) }
@@ -112,7 +119,7 @@ export async function crearTerminal(maquinaId: string, pedido: PedidoTerminal): 
   const respuesta = await fetch(`/api/maquinas/${encodeURIComponent(maquinaId)}/terminales`, {
     ...opcionesPeticion(TIEMPO_LIMITE_MAQUINA_MS),
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...cabecerasTerminal() },
     body: JSON.stringify(pedido),
   })
   if (!respuesta.ok) {
@@ -128,6 +135,7 @@ export async function cerrarTerminal(maquinaId: string, terminalId: string): Pro
   const respuesta = await fetch(`/api/maquinas/${encodeURIComponent(maquinaId)}/terminales/${terminalId}`, {
     ...opcionesPeticion(),
     method: 'DELETE',
+    headers: cabecerasTerminal(),
   })
   if (!respuesta.ok) throw new ErrorApi(respuesta.status)
 }

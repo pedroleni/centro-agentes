@@ -289,7 +289,6 @@ describe('crearManejador', () => {
   describe('terminales en modo local', () => {
     const ORIGEN = 'http://127.0.0.1:4600'
     const CLAVE = 'clave-de-prueba-0123456789'
-    const COOKIE = `ca_panel=${CLAVE}`
     const info = { id: '0123456789ab', titulo: 'Claude · x', tipo: 'claude', agenteId: null, proyectoId: 'aaaaaaaaaaaa', creadoMs: 1 }
     function conTerminales() {
       const crear = vi.fn(async () => ({ ok: true as const, terminal: info }))
@@ -301,11 +300,11 @@ describe('crearManejador', () => {
 
     it('crea un terminal con POST y Origin propio, y lo cierra con DELETE', async () => {
       const { manejar, crear, cerrar } = conTerminales()
-      const r = await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, cookie: COOKIE, cuerpo }))
+      const r = await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, clave: CLAVE, cuerpo }))
       expect(r.estado).toBe(201)
       expect(JSON.parse(String(r.cuerpo))).toEqual(info)
       expect(crear).toHaveBeenCalledWith({ accion: 'nueva', tipo: 'claude', proyectoId: 'aaaaaaaaaaaa' })
-      expect((await manejar(peticion({ metodo: 'DELETE', url: '/api/maquinas/maquina/terminales/0123456789ab', origin: ORIGEN, cookie: COOKIE }))).estado).toBe(204)
+      expect((await manejar(peticion({ metodo: 'DELETE', url: '/api/maquinas/maquina/terminales/0123456789ab', origin: ORIGEN, clave: CLAVE }))).estado).toBe(204)
       expect(cerrar).toHaveBeenCalledWith('0123456789ab')
     })
 
@@ -313,47 +312,40 @@ describe('crearManejador', () => {
       const { manejar, crear } = conTerminales()
       expect((await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: 'https://evil.com', cuerpo }))).estado).toBe(403)
       expect((await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', cuerpo }))).estado).toBe(403)
-      expect((await manejar(peticion({ metodo: 'POST', url: '/api/instantanea', origin: ORIGEN, cookie: COOKIE, cuerpo }))).estado).toBe(405)
-      expect((await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/otra/terminales', origin: ORIGEN, cookie: COOKIE, cuerpo }))).estado).toBe(404)
-      expect((await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, cookie: COOKIE, cuerpo: '{"accion":"ejecutar","orden":"rm -rf ~"}' }))).estado).toBe(400)
+      expect((await manejar(peticion({ metodo: 'POST', url: '/api/instantanea', origin: ORIGEN, clave: CLAVE, cuerpo }))).estado).toBe(405)
+      expect((await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/otra/terminales', origin: ORIGEN, clave: CLAVE, cuerpo }))).estado).toBe(404)
+      expect((await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, clave: CLAVE, cuerpo: '{"accion":"ejecutar","orden":"rm -rf ~"}' }))).estado).toBe(400)
       expect((await manejar(peticion({ metodo: 'DELETE', url: '/api/maquinas/maquina/terminales/..%2Fx', origin: ORIGEN }))).estado).toBe(405)
       expect(crear).not.toHaveBeenCalled()
     })
 
     it('sin la clave de este arranque del panel no crea ni cierra terminales', async () => {
       const { manejar, crear, cerrar } = conTerminales()
-      const crearCon = (cookie: string | undefined) => manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, cookie, cuerpo }))
+      const crearCon = (clave: string | undefined) => manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, clave, cuerpo }))
       expect((await crearCon(undefined)).estado).toBe(401)
-      expect((await crearCon('ca_panel=otra-clave')).estado).toBe(401)
-      expect((await crearCon(`otra=1; ca_panel=${CLAVE}x`)).estado).toBe(401)
+      expect((await crearCon('otra-clave')).estado).toBe(401)
+      expect((await crearCon(`${CLAVE}x`)).estado).toBe(401)
       expect((await manejar(peticion({ metodo: 'DELETE', url: '/api/maquinas/maquina/terminales/0123456789ab', origin: ORIGEN }))).estado).toBe(401)
       expect(crear).not.toHaveBeenCalled()
       expect(cerrar).not.toHaveBeenCalled()
-      expect((await crearCon(`otra=1; ca_panel=${CLAVE}`)).estado).toBe(201)
+      expect((await crearCon(CLAVE)).estado).toBe(201)
 
       // Sin clave configurada, el panel no deja crear terminales a nadie.
       const sinClave = crearManejador(dependencias({ terminales: { crear, cerrar } as never }))
-      expect((await sinClave(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, cookie: COOKIE, cuerpo }))).estado).toBe(401)
+      expect((await sinClave(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, clave: CLAVE, cuerpo }))).estado).toBe(401)
     })
 
-    it('el enlace de arranque con la clave guarda la cookie y lleva al panel; con otra, 403', async () => {
+    it('la clave nunca va en una cookie: el panel no la pone ni tiene ruta de entrada', async () => {
       const { manejar } = conTerminales()
       const r = await manejar(peticion({ url: `/entrar?clave=${CLAVE}` }))
-      expect(r.estado).toBe(302)
-      expect(r.cabeceras.Location).toBe('/')
-      expect(r.cabeceras['Set-Cookie']).toBe(`ca_panel=${CLAVE}; HttpOnly; SameSite=Strict; Path=/`)
-      expect(r.cabeceras['Cache-Control']).toBe('no-store')
-      for (const url of ['/entrar?clave=otra', '/entrar', `/entrar?clave=${CLAVE}&clave=x`]) {
-        const mala = await manejar(peticion({ url }))
-        expect(mala.estado).toBe(403)
-        expect(mala.cabeceras['Set-Cookie']).toBeUndefined()
-      }
+      expect(r.cabeceras['Set-Cookie']).toBeUndefined()
+      expect(r.estado).not.toBe(302)
     })
 
     it('pasa el estado de error del servicio (409 si la sesión sigue abierta)', async () => {
       const crear = vi.fn(async () => ({ ok: false as const, estado: 409 as const, error: 'Esta sesión sigue abierta en otro sitio' }))
       const manejar = crearManejador(dependencias({ terminales: { crear, cerrar: vi.fn() } as never, clave: CLAVE }))
-      const r = await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, cookie: COOKIE, cuerpo: JSON.stringify({ accion: 'continuar', agenteId: 'claude:x' }) }))
+      const r = await manejar(peticion({ metodo: 'POST', url: '/api/maquinas/maquina/terminales', origin: ORIGEN, clave: CLAVE, cuerpo: JSON.stringify({ accion: 'continuar', agenteId: 'claude:x' }) }))
       expect(r.estado).toBe(409)
       expect(JSON.parse(String(r.cuerpo))).toEqual({ error: 'Esta sesión sigue abierta en otro sitio' })
     })
