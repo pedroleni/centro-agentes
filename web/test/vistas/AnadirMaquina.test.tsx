@@ -38,4 +38,10 @@ describe('AnadirMaquina', () => {
     expect(fetch.mock.calls[0]?.[0]).toBe('/api/maquinas/aaaaaaaaaaaa')
     expect(fetch.mock.calls[0]?.[1]?.method).toBe('DELETE')
   })
+  it('no exagera los minutos si la hora de referencia va unos segundos por detrás', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respuesta({ codigo: 'ABCDEFGH', caducaMs: AHORA + 3_000 + 600_000 })))
+    render(<AnadirMaquina maquinas={maquinas} ahora={AHORA} alCerrar={() => {}} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Generar código' })); await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByText(/caduca en 10 min/)).toBeTruthy()
+  })
 })

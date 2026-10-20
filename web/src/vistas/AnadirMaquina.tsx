@@ -32,7 +32,7 @@ export function AnadirMaquina({ maquinas, ahora, alCerrar }: Propiedades) {
     }
   }
 
-  const minutos = codigo === null ? 0 : Math.max(0, Math.ceil((codigo.caducaMs - ahora) / 60_000))
+  const minutos = codigo === null ? 0 : Math.max(0, Math.floor((codigo.caducaMs - ahora) / 60_000))
   const comandos = codigo === null ? '' : [
     'git clone git@github.com:pedroleni/centro-agentes.git && cd centro-agentes && npm install',
     `npm run agente:alta -- --hub ${window.location.origin} --codigo ${codigo.codigo}`,
