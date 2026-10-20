@@ -12,7 +12,7 @@ import { commitsRecientes } from './lectores/git.js'
 import { crearRegistroFuentes, leerLinea } from './linea.js'
 import { crearCacheInstantanea } from './panel/cache.js'
 import { crearObtenerLinea } from './panel/obtenerLinea.js'
-import { crearGestorTerminalesReal } from './terminales/gestor.js'
+import { crearGestorTerminalesDelSistema } from './terminales/sistema.js'
 import { crearTerminalPedido } from './terminales/servicio.js'
 import { darDeAlta, leerConfigConexion, rutaConfigConexion } from './alta.js'
 import { crearConexionHub, urlWebSocket, type SocketMinimo } from './conexionHub.js'
@@ -100,7 +100,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   // caché, los commits de un proyecto y la línea de tiempo de un agente.
   const crearDatos = () => {
     const registroFuentes = crearRegistroFuentes()
-    const gestor = crearGestorTerminalesReal()
+    const gestor = crearGestorTerminalesDelSistema(process.platform)
     const cache = crearCacheInstantanea(() => registroFuentes.construir((registrarFuente) =>
       construirInstantanea({ cfg, rutas, so, ahoraMs: Date.now(), pidVivo, ejecutar, registrarFuente, listarTerminales: gestor.listar })))
     return {

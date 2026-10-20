@@ -134,6 +134,19 @@ describe('gestor de terminales', () => {
     expect(f.pty.kill).toHaveBeenCalled()
   })
 
+  it('no se cae si el pty ya ha terminado al escribir, redimensionar o soltar', () => {
+    const f = falsos()
+    const roto = () => { throw new Error('ioctl(2) failed, EBADF') }
+    f.pty.resize.mockImplementation(roto)
+    f.pty.write.mockImplementation(roto)
+    f.pty.kill.mockImplementation(roto)
+    const gestor = crearGestorTerminales({ tmux: f.tmux, abrirPty: f.abrirPty })
+    const enganche = gestor.adjuntar('0123456789ab', { cols: 80, rows: 24 }, () => {}, () => {})
+    expect(() => enganche.redimensionar(100, 30)).not.toThrow()
+    expect(() => enganche.escribir('ls\r')).not.toThrow()
+    expect(() => enganche.soltar()).not.toThrow()
+  })
+
   it('rechaza ids que no son de 12 hex al enganchar o cerrar', async () => {
     const gestor = crearGestorTerminales({ tmux: falsos().tmux, abrirPty: falsos().abrirPty })
     expect(() => gestor.adjuntar('x; ls', { cols: 80, rows: 24 }, () => {}, () => {})).toThrow()
