@@ -2,6 +2,7 @@ import type { Commit, Instantanea } from '@centro/compartido'
 import { z } from 'zod'
 import type { ResultadoLinea } from '../linea.js'
 import type { PedidoTerminal, ResultadoTerminal } from '../terminales/servicio.js'
+import { COOKIE_PANEL, cookiePanel, leerCookie, mismaClave } from './clave.js'
 import {
   decodificarRuta,
   json,
@@ -16,6 +17,7 @@ export type Peticion = {
   url: string
   host: string | undefined
   origin?: string | undefined
+  cookie?: string | undefined
   cuerpo?: string | null
 }
 
@@ -32,6 +34,8 @@ type DependenciasManejador = {
     crear(pedido: PedidoTerminal): Promise<ResultadoTerminal>
     cerrar(terminalId: string): Promise<void>
   }
+  // Clave de este arranque (ver clave.ts). Sin ella, nadie puede usar terminales.
+  clave?: string
 }
 
 const Pedido = z.union([
@@ -40,7 +44,8 @@ const Pedido = z.union([
 ])
 
 // Únicas escrituras del panel local: crear y cerrar terminales, siempre con un
-// Origin exacto de este mismo panel (ninguna otra web puede hacerlo).
+// Origin exacto de este mismo panel (ninguna otra web puede hacerlo) y con la
+// clave de este arranque (ningún otro proceso de la máquina puede hacerlo).
 async function manejarEscritura(dep: DependenciasManejador, peticion: Peticion): Promise<Respuesta> {
   const origenes = new Set([`http://127.0.0.1:${dep.puerto}`, `http://localhost:${dep.puerto}`])
   const ruta = decodificarRuta(peticion.url)
@@ -49,6 +54,9 @@ async function manejarEscritura(dep: DependenciasManejador, peticion: Peticion):
   const valida = (peticion.metodo === 'POST' && crear !== null) || (peticion.metodo === 'DELETE' && cerrar !== null)
   if (!valida) return respuesta(405, 'Metodo no permitido', { Allow: 'GET, HEAD' })
   if (peticion.origin === undefined || !origenes.has(peticion.origin)) return json(403, { error: 'Origen no permitido' })
+  if (!mismaClave(leerCookie(peticion.cookie, COOKIE_PANEL), dep.clave)) {
+    return json(401, { error: 'Abre el panel con el enlace que muestra `npm run panel` al arrancar' })
+  }
   if (dep.terminales === undefined) return json(404, { error: 'No encontrado' })
   const instantanea = await dep.obtenerInstantanea().catch(() => null)
   const maquinaId = (crear ?? cerrar)?.[1]
@@ -70,6 +78,16 @@ async function manejarEscritura(dep: DependenciasManejador, peticion: Peticion):
   }
   const resultado = await dep.terminales.crear(pedido)
   return resultado.ok ? json(201, resultado.terminal) : json(resultado.estado, { error: resultado.error })
+}
+
+// Enlace de entrada que imprime `npm run panel`: guarda la clave en una cookie y
+// lleva al panel.
+function entrar(dep: DependenciasManejador, url: string): Respuesta {
+  const claves = new URL(url, 'http://panel').searchParams.getAll('clave')
+  if (claves.length !== 1 || !mismaClave(claves[0], dep.clave)) {
+    return respuesta(403, 'Clave no válida: usa el enlace que muestra `npm run panel` al arrancar')
+  }
+  return respuesta(302, '', { Location: '/', 'Set-Cookie': cookiePanel(dep.clave ?? ''), 'Cache-Control': 'no-store' })
 }
 
 async function manejarApi(
@@ -175,6 +193,8 @@ export function crearManejador(
         resultado = esApi
           ? json(404, { error: 'No encontrado' })
           : respuesta(404, 'No encontrado')
+      } else if (ruta === '/entrar') {
+        resultado = entrar(dep, peticion.url)
       } else if (ruta.startsWith('/api')) {
         resultado = await manejarApi(dep, ruta, peticion.url)
       } else {

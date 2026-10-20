@@ -17,6 +17,7 @@ import { crearTerminalPedido } from './terminales/servicio.js'
 import { darDeAlta, leerConfigConexion, rutaConfigConexion } from './alta.js'
 import { crearConexionHub, urlWebSocket, type SocketMinimo } from './conexionHub.js'
 import { crearManejador } from './panel/manejador.js'
+import { crearClavePanel } from './panel/clave.js'
 import { arrancarPanel } from './panel/servidor.js'
 import { rutasBase } from './rutas/base.js'
 
@@ -125,8 +126,10 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
     const { cache, gestor, obtenerCommits, obtenerLinea } = crearDatos()
     const raizRepo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
     const dirWeb = path.join(raizRepo, 'web', 'dist')
+    const clave = crearClavePanel()
     const manejador = crearManejador({
       puerto,
+      clave,
       obtenerInstantanea: cache.obtener,
       obtenerCommits,
       obtenerLinea,
@@ -149,9 +152,11 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
     await arrancarPanel({
       puerto,
       manejador,
-      terminal: { maquinaId: async () => (await cache.obtener()).maquina.id, adjuntar: gestor.adjuntar },
+      terminal: { maquinaId: async () => (await cache.obtener()).maquina.id, adjuntar: gestor.adjuntar, clave },
     })
-    process.stdout.write(`Panel: http://127.0.0.1:${puerto}\n`)
+    // El enlace lleva la clave de este arranque: sin él se ve el panel, pero no
+    // se pueden abrir terminales.
+    process.stdout.write(`Panel: http://127.0.0.1:${puerto}/entrar?clave=${clave}\n`)
     return
   }
 

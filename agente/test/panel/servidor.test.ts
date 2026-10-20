@@ -21,7 +21,7 @@ async function preparar() {
   const servidor = await arrancarPanel({
     puerto,
     manejador: async () => ({ estado: 404, cabeceras: {}, cuerpo: '' }),
-    terminal: { maquinaId: async () => 'm1', adjuntar: gestor.adjuntar },
+    terminal: { maquinaId: async () => 'm1', adjuntar: gestor.adjuntar, clave: 'clave-de-prueba' },
   })
   servidores.push(servidor)
   const info = await gestor.crear({ cwd: '/tmp', argv: ['/bin/sh', '-c', 'cat'], titulo: 'prueba', tipo: 'claude', agenteId: null, proyectoId: null })
@@ -29,9 +29,9 @@ async function preparar() {
   return { puerto, gestor, id: info.id }
 }
 
-function abrir(url: string, origin: string): Promise<WebSocket | number> {
+function abrir(url: string, origin: string, cookie = 'ca_panel=clave-de-prueba'): Promise<WebSocket | number> {
   return new Promise((resolver) => {
-    const ws = new WebSocket(url, { origin })
+    const ws = new WebSocket(url, { origin, headers: { Cookie: cookie } })
     ws.on('open', () => resolver(ws))
     ws.on('unexpected-response', (_peticion, respuesta) => resolver(respuesta.statusCode ?? 0))
     ws.on('error', () => resolver(0))
@@ -43,6 +43,19 @@ describe.skipIf(sinEntorno)('WebSocket de terminal del panel local', () => {
     const { puerto, id } = await preparar()
     expect(await abrir(`ws://127.0.0.1:${puerto}/api/maquinas/m1/terminales/${id}/ws`, 'https://evil.com')).toBe(403)
     expect(await abrir(`ws://127.0.0.1:${puerto}/api/maquinas/otra/terminales/${id}/ws`, `http://127.0.0.1:${puerto}`)).toBe(404)
+  })
+
+  it('sin la clave del panel no se engancha: cierra con 4401 sin abrir el terminal', async () => {
+    const { puerto, id } = await preparar()
+    for (const cookie of ['', 'ca_panel=otra']) {
+      const ws = await abrir(`ws://127.0.0.1:${puerto}/api/maquinas/m1/terminales/${id}/ws`, `http://127.0.0.1:${puerto}`, cookie)
+      expect(ws).toBeInstanceOf(WebSocket)
+      const socket = ws as WebSocket
+      let recibido = ''
+      socket.on('message', (d) => { recibido += d.toString() })
+      expect(await new Promise<number>((r) => socket.on('close', (codigo) => r(codigo)))).toBe(4401)
+      expect(recibido).toBe('')
+    }
   })
 
   it('con el Origin del panel escribe en el terminal y recibe su salida; al cerrarlo, 4000', async () => {

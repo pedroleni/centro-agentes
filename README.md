@@ -3,13 +3,17 @@
 Panel privado para ver y controlar las sesiones de **Claude Code** y
 **Codex** en varias máquinas (MacBook, Mac mini y Windows).
 
-Estado: **fase 3** (hub con varias máquinas). Ver `docs/superpowers/`.
+Estado: **fase 4** (terminales en el navegador). Ver `docs/superpowers/`.
 
 ## Panel
 
 ```bash
-npm run panel        # compila el front y abre el panel en http://127.0.0.1:4600
+npm run panel        # compila el front y arranca el panel en http://127.0.0.1:4600
 ```
+
+Abre el enlace que imprime al arrancar (`http://127.0.0.1:4600/entrar?clave=…`).
+La clave cambia en cada arranque. Sin ella se ve el panel, pero no se pueden
+abrir terminales.
 
 - **Vista general**: tus proyectos agrupados por carpeta, con las sesiones de
   Claude Code y Codex de cada uno (estado, modelo, contexto usado y tiempo),
@@ -25,10 +29,15 @@ npm run panel        # compila el front y abre el panel en http://127.0.0.1:4600
 - **Ficha de proyecto** (clic en la tarjeta): historial real por días, con los
   commits colgando de la sesión que los hizo, las tareas (handoff y planes
   con progreso y fecha) y las sesiones del proyecto.
-- Solo escucha en `127.0.0.1`, rechaza cualquier otro `Host`, no acepta
-  escrituras y no sale de tu máquina. Para cambiar el puerto:
+- **Terminales**: "Continuar aquí" en una sesión cerrada y "Nueva sesión de
+  Claude" o "Nueva sesión de Codex" en la ficha de un proyecto abren un
+  terminal real (tmux) en el navegador, también desde el móvil, con una
+  barra de teclas extra. Siguen abiertos aunque cierres la pestaña. Vuelves a
+  ellos desde "Terminales abiertos" en el bloque de la máquina.
+- Solo escucha en `127.0.0.1` y rechaza cualquier otro `Host`. Solo acepta
+  escrituras para crear y cerrar terminales, con el `Origin` del propio panel
+  y su clave. No sale de tu máquina. Para cambiar el puerto:
   `npm run panel -- --puerto 4700`.
-- Continuar sesiones y ver varias máquinas llegan en las fases siguientes.
 
 ## Instalación en tus máquinas (hub + agentes)
 

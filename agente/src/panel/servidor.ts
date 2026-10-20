@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { WebSocketServer } from 'ws'
 import { CIERRE_TERMINAL, MensajeNavegadorTerminal } from '@centro/compartido'
 import type { GestorTerminales } from '../terminales/gestor.js'
+import { COOKIE_PANEL, leerCookie, mismaClave } from './clave.js'
 import type { Peticion, Respuesta } from './manejador.js'
 
 const LIMITE_CUERPO = 64 * 1024
@@ -12,6 +13,7 @@ type OpcionesPanel = {
   terminal?: {
     maquinaId(): Promise<string>
     adjuntar: GestorTerminales['adjuntar']
+    clave: string
   }
 }
 
@@ -65,6 +67,7 @@ export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
         url: peticion.url ?? '/',
         host: cabecera(peticion, 'host'),
         origin: cabecera(peticion, 'origin'),
+        cookie: cabecera(peticion, 'cookie'),
         cuerpo,
       })
       if (!respuesta.headersSent) {
@@ -99,8 +102,11 @@ export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
       const cols = Number(url.searchParams.get('cols') ?? 80)
       const rows = Number(url.searchParams.get('rows') ?? 24)
       const terminal = opciones.terminal
+      const conClave = mismaClave(leerCookie(cabecera(peticion, 'cookie'), COOKIE_PANEL), terminal.clave)
       wss.handleUpgrade(peticion, socket, cabeza, (ws) => {
         ws.on('error', () => undefined)
+        // Sin la clave se cierra con 4401 para que el navegador lo diga y no reintente.
+        if (!conClave) return ws.close(CIERRE_TERMINAL.sesionCaducada, 'Falta la clave del panel')
         let enganche: ReturnType<GestorTerminales['adjuntar']>
         try {
           enganche = terminal.adjuntar(
