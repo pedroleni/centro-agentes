@@ -123,18 +123,28 @@ verificar allí lo que no se puede probar desde macOS:
 2. Clona el repositorio y, desde su carpeta en PowerShell, instala exactamente
    sus dependencias con `npm ci`.
 3. Ejecuta `npm run agente:diagnostico`. Comprueba en el JSON que
-   `claude.existe`, `codex.existe` y `terminales.disponible` valen `true`.
-4. En el hub genera un código para añadir la máquina y úsalo así:
-   `npm run agente:alta -- --hub https://<mac-mini>.<tailnet>.ts.net --codigo <CÓDIGO> --nombre Windows`.
+   `claude.existe`, `codex.existe` y `terminales.disponible` valen `true`, y
+   que en `terminales.detalle` salen las rutas de `claude` y `codex` (ahí
+   PowerShell abre un terminal de verdad y los busca).
+4. En el hub genera un código para añadir la máquina y úsalo así (con
+   `npm.cmd`: en PowerShell, `npm` se come el `--` y los datos no llegan):
+   `npm.cmd run agente:alta -- --hub https://<mac-mini>.<tailnet>.ts.net --codigo <CÓDIGO> --nombre Windows`.
 5. Instala el arranque automático con
    `powershell -ExecutionPolicy Bypass -File scripts\servicios\instalar-agente-windows.ps1`.
-   Cierra la sesión de Windows, vuelve a entrar y comprueba que la máquina
-   aparece como **«Conectada»** en el hub.
+   Cierra la sesión de Windows y vuelve a entrar. Comprueba que **no aparece
+   ninguna ventana** y que la máquina sale **«Conectada»** en el hub. Después,
+   en el Administrador de tareas, finaliza el proceso `node.exe` del agente:
+   en menos de un minuto tiene que volver a salir «Conectada».
 6. Desde el móvil, pulsa **«Nueva sesión de Claude»** en un proyecto de
    Windows. Comprueba que se abre y responde; sal del terminal, vuelve a
-   entrar y verifica que reaparece la salida reciente.
+   entrar y verifica que reaparece la salida reciente. Al cerrarlo, en el
+   Administrador de tareas no debe quedar ningún `conhost.exe` u
+   `OpenConsole.exe` de más.
 7. En una sesión cerrada de Codex de Windows, pulsa **«Continuar aquí»** y
-   comprueba que se reanuda en el mismo proyecto.
+   comprueba que se reanuda en el mismo proyecto. Si no aparece el botón,
+   cierra Codex en VS Code o en otras terminales y espera unos segundos: en
+   Windows no se sabe en qué carpeta corre cada Codex abierto, y ante la duda
+   el panel trata sus hilos recientes como abiertos para no duplicarlos.
 
 Si algo no va:
 

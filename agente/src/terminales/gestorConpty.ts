@@ -24,7 +24,36 @@ type TerminalConpty = {
   pty: PtyMinimo
   salida: string[]
   bytesSalida: number
+  // Si se ha descartado salida antigua, y el último estado de cada modo privado
+  // (\x1b[?Nh / \x1b[?Nl) visto: pegado entre corchetes, pantalla alternativa,
+  // cursor… Al reenviar lo recortado, esos modos se habrían perdido.
+  recortada: boolean
+  modos: Map<string, 'h' | 'l'>
   enganches: Set<EngancheConpty>
+}
+
+const MODO_PRIVADO = /\u001b\[\?([\d;]+)([hl])/g
+
+function apuntarModos(terminal: TerminalConpty, datos: string): void {
+  for (const [, numeros = '', valor] of datos.matchAll(MODO_PRIVADO)) {
+    for (const numero of numeros.split(';')) {
+      if (numero === '') continue
+      // Se borra antes para que el orden refleje el último cambio.
+      terminal.modos.delete(numero)
+      terminal.modos.set(numero, valor as 'h' | 'l')
+    }
+  }
+}
+
+// Lo que se reenvía al volver a entrar: tal cual si no se ha recortado; si se ha
+// recortado, primero los modos vigentes y después la salida desde una línea entera.
+function salidaParaReenviar(terminal: TerminalConpty): string {
+  const salida = terminal.salida.join('')
+  if (!terminal.recortada) return salida
+  const salto = salida.indexOf('\n')
+  const desdeLinea = salto === -1 ? salida : salida.slice(salto + 1)
+  const modos = [...terminal.modos].map(([numero, valor]) => `\u001b[?${numero}${valor}`).join('')
+  return modos + desdeLinea
 }
 
 const ID = /^[0-9a-f]{12}$/
@@ -56,6 +85,7 @@ function guardarSalida(terminal: TerminalConpty, datos: string, memoria: number)
   }
   terminal.salida.push(datos)
   terminal.bytesSalida += Buffer.byteLength(datos, 'utf8')
+  if (terminal.bytesSalida > memoria) terminal.recortada = true
   while (terminal.bytesSalida > memoria && terminal.salida.length > 0) {
     const primero = terminal.salida[0]!
     const bytesPrimero = Buffer.byteLength(primero, 'utf8')
@@ -115,14 +145,19 @@ export function crearGestorTerminalesConpty(dep: {
         pty,
         salida: [],
         bytesSalida: 0,
+        recortada: false,
+        modos: new Map(),
         enganches: new Set(),
       }
       terminales.set(id, terminal)
       pty.onData((datos) => {
+        apuntarModos(terminal, datos)
         guardarSalida(terminal, datos, memoria)
         for (const enganche of [...terminal.enganches]) enganche.alDatos(datos)
       })
       pty.onExit(() => {
+        // Al terminar solo, node-pty no cierra la pseudoconsola: quedaría un conhost.
+        sinFallo(() => pty.kill())
         terminales.delete(id)
         for (const enganche of [...terminal.enganches]) enganche.alSalir()
         terminal.enganches.clear()
@@ -139,7 +174,7 @@ export function crearGestorTerminalesConpty(dep: {
       comprobarId(id)
       const terminal = terminales.get(id)
       if (terminal === undefined) throw new Error('Terminal no encontrado')
-      const salida = terminal.salida.join('')
+      const salida = salidaParaReenviar(terminal)
       if (salida !== '') alDatos(salida)
       const enganche = { alDatos, alSalir }
       terminal.enganches.add(enganche)
@@ -173,6 +208,9 @@ export function crearGestorTerminalesConptyReal(): GestorTerminales {
         env: opciones.env as Record<string, string>,
         useConpty: true,
       })
+      // node-pty relanza cualquier error de su socket si nadie más lo escucha, y
+      // eso tumbaría el agente. El final del proceso ya llega por onExit.
+      ;(proceso as unknown as { on(evento: 'error', oyente: () => void): void }).on('error', () => undefined)
       return {
         write: (datos) => proceso.write(datos),
         resize: (cols, rows) => proceso.resize(cols, rows),
@@ -181,5 +219,41 @@ export function crearGestorTerminalesConptyReal(): GestorTerminales {
         onExit: (alSalir) => { proceso.onExit(alSalir) },
       }
     },
+  })
+}
+
+// Prueba real de ConPTY para el diagnóstico: abre PowerShell igual que un
+// terminal del panel y pregunta dónde están claude y codex y qué política de
+// ejecución tiene. Si en 10 s no termina, no está disponible.
+export function probarConptyReal(): Promise<{ disponible: boolean; detalle: string | null }> {
+  return new Promise((resolver) => {
+    let salida = ''
+    let terminado = false
+    let proceso: import('node-pty').IPty
+    const acabar = (disponible: boolean): void => {
+      if (terminado) return
+      terminado = true
+      clearTimeout(limite)
+      sinFallo(() => proceso.kill())
+      const detalle = salida.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r/g, '').trim()
+      resolver({ disponible, detalle: detalle === '' ? null : detalle })
+    }
+    const limite = setTimeout(() => acabar(false), 10_000)
+    try {
+      const pty = createRequire(import.meta.url)('node-pty') as typeof import('node-pty')
+      proceso = pty.spawn('powershell.exe', ['-NoLogo', '-Command', '(Get-Command claude,codex -ErrorAction SilentlyContinue).Source; Get-ExecutionPolicy'], {
+        name: 'xterm-256color',
+        cols: 200,
+        rows: 20,
+        cwd: process.cwd(),
+        env: entornoTerminal(process.env) as Record<string, string>,
+        useConpty: true,
+      })
+      ;(proceso as unknown as { on(evento: 'error', oyente: () => void): void }).on('error', () => undefined)
+      proceso.onData((datos) => { salida += datos })
+      proceso.onExit(({ exitCode }) => acabar(exitCode === 0))
+    } catch {
+      acabar(false)
+    }
   })
 }

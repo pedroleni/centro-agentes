@@ -8,10 +8,14 @@ $Carpeta = Join-Path $env:LOCALAPPDATA 'centro-agentes'
 New-Item -ItemType Directory -Force -Path $Carpeta | Out-Null
 $Registro = Join-Path $Carpeta 'agente.log'
 
-# Se redirige con cmd y no con PowerShell: PowerShell 5.1 escribiría el registro
-# en UTF-16 y envolvería cada línea de error de npm como NativeCommandError.
-cmd.exe /d /c "npm run agente:conectar >> `"$Registro`" 2>&1"
-
-# El código de salida decide si el Programador de tareas lo reinicia: con error,
-# sí; con 0 (token revocado u otra copia conectada), no.
-exit $LASTEXITCODE
+# El Programador de tareas solo reintenta si la tarea no llega a arrancar, no si
+# el agente se cae después: por eso el bucle está aquí, como el KeepAlive de
+# launchd. Con 0 (token revocado u otra copia conectada) se para; con error, se
+# vuelve a lanzar a los 10 s.
+while ($true) {
+    # Se redirige con cmd y no con PowerShell: PowerShell 5.1 escribiría el
+    # registro en UTF-16 y envolvería cada línea de error de npm como NativeCommandError.
+    cmd.exe /d /c "npm run agente:conectar >> `"$Registro`" 2>&1"
+    if ($LASTEXITCODE -eq 0) { exit $LASTEXITCODE }
+    Start-Sleep -Seconds 10
+}

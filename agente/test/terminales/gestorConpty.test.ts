@@ -159,4 +159,37 @@ describe('gestor de terminales ConPTY', () => {
     expect(() => enganche.redimensionar(100, 30)).not.toThrow()
     expect(() => enganche.escribir('ls\r')).not.toThrow()
   })
+
+  it('al terminar el proceso cierra también su pseudoconsola', async () => {
+    const f = falsos()
+    const gestor = crearGestorTerminalesConpty({ abrirPty: f.abrirPty })
+    await gestor.crear(orden)
+    f.procesos[0]!.emitirSalida(0)
+    expect(f.procesos[0]!.pty.kill).toHaveBeenCalled()
+  })
+
+  it('al volver tras mucha salida conserva los modos del terminal y empieza en una línea entera', async () => {
+    const f = falsos()
+    const gestor = crearGestorTerminalesConpty({ abrirPty: f.abrirPty })
+    const info = await gestor.crear(orden)
+    // Claude activa el pegado entre corchetes al arrancar; sin él, pegar varias
+    // líneas tras volver a entrar enviaría el mensaje a la primera.
+    f.procesos[0]!.emitirDatos('\u001b[?2004h\u001b[?25l')
+    for (let i = 0; i < 30_000; i += 1) f.procesos[0]!.emitirDatos(`linea ${i}\r\n`)
+    let recibido = ''
+    gestor.adjuntar(info.id, { cols: 80, rows: 24 }, (datos) => { recibido += datos }, () => {})
+    expect(recibido.startsWith('\u001b[?2004h\u001b[?25l')).toBe(true)
+    expect(recibido.slice('\u001b[?2004h\u001b[?25l'.length)).toMatch(/^linea \d+\r\n/)
+    expect(recibido.endsWith('linea 29999\r\n')).toBe(true)
+  })
+
+  it('sin recortar no añade nada a la salida guardada', async () => {
+    const f = falsos()
+    const gestor = crearGestorTerminalesConpty({ abrirPty: f.abrirPty })
+    const info = await gestor.crear(orden)
+    f.procesos[0]!.emitirDatos('hola\u001b[?1049h pantalla')
+    let recibido = ''
+    gestor.adjuntar(info.id, { cols: 80, rows: 24 }, (datos) => { recibido += datos }, () => {})
+    expect(recibido).toBe('hola\u001b[?1049h pantalla')
+  })
 })

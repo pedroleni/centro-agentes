@@ -21,4 +21,9 @@ describe('cargarConfig', () => {
       '/Users/pedro/Documents',
     ])
   })
+
+  it('también encuentra el OneDrive de empresa', () => {
+    expect(cargarConfig(null, 'C:\\Users\\pedro', 'windows', { OneDriveCommercial: 'C:\\Users\\pedro\\OneDrive - Empresa' }).raices)
+      .toContain('C:\\Users\\pedro\\OneDrive - Empresa\\Escritorio')
+  })
 })

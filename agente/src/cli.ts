@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +13,7 @@ import { commitsRecientes } from './lectores/git.js'
 import { crearRegistroFuentes, leerLinea } from './linea.js'
 import { crearCacheInstantanea } from './panel/cache.js'
 import { crearObtenerLinea } from './panel/obtenerLinea.js'
+import { probarConptyReal } from './terminales/gestorConpty.js'
 import { crearGestorTerminalesDelSistema } from './terminales/sistema.js'
 import { crearTerminalPedido } from './terminales/servicio.js'
 import { darDeAlta, leerConfigConexion, rutaConfigConexion } from './alta.js'
@@ -104,14 +104,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
       rutas,
       raices: cfg.raices,
       ejecutar,
-      cargarPty: () => {
-        try {
-          createRequire(import.meta.url)('node-pty')
-          return true
-        } catch {
-          return false
-        }
-      },
+      probarTerminal: probarConptyReal,
       version: process.version,
     })
     process.stdout.write(`${JSON.stringify(diagnostico, null, 2)}\n`)

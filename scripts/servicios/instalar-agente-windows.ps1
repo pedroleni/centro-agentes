@@ -18,10 +18,15 @@ $RutaAgente = (Resolve-Path (Join-Path $PSScriptRoot 'agente-windows.ps1')).Path
 # hay servicios que corran antes de iniciar sesión. Con dominio para que valga
 # con cuentas locales, de Microsoft y de dominio.
 $Disparador = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-$Accion = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$RutaAgente`""
+# conhost --headless: con Windows Terminal como consola por defecto (Windows 11),
+# -WindowStyle Hidden no oculta la ventana, y cerrarla mataría el agente.
+$Accion = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$RutaAgente`""
 
 # Sin el límite de 72 horas que pone Windows por defecto (mataría el agente a
-# los tres días) y con reintentos cada minuto si npm o el agente fallan.
-$Ajustes = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+# los tres días), con reintentos cada minuto si la tarea no llega a arrancar (si
+# el agente se cae después, lo relanza el bucle de agente-windows.ps1) y con
+# prioridad normal (4): la de por defecto (7) es baja, y la heredarían también
+# las sesiones de Claude y Codex de los terminales.
+$Ajustes = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -Priority 4
 
 Register-ScheduledTask -TaskName 'centro-agentes agente' -Trigger $Disparador -Action $Accion -Settings $Ajustes -Force

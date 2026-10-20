@@ -36,14 +36,14 @@ describe('diagnosticar', () => {
       rutas: rutasBase('macos', home, {}),
       raices: [path.join(home, 'Desktop')],
       ejecutar: async () => Promise.reject(new Error('no está instalado')),
-      cargarPty: () => true,
+      probarTerminal: async () => ({ disponible: true, detalle: null }),
       version: 'v22.12.0',
     })
 
     expect(resultado.claude).toEqual({ existe: true, proyectos: 2, sesionesVivas: 1 })
     expect(resultado.codex).toEqual({ existe: true, baseDeDatos: 'state_5.sqlite', rollouts: true })
     expect(resultado.git).toBeNull()
-    expect(resultado.terminales).toEqual({ tipo: 'tmux', disponible: false })
+    expect(resultado.terminales).toEqual({ tipo: 'tmux', disponible: false, detalle: null })
     expect(resultado.raices).toEqual([{ ruta: path.join(home, 'Desktop'), existe: false }])
     expect(JSON.stringify(resultado)).not.toContain('SECRETO-NO')
   })
@@ -55,11 +55,11 @@ describe('diagnosticar', () => {
       rutas: rutasBase('windows', 'C:\\Users\\pedro', {}),
       raices: [],
       ejecutar,
-      cargarPty: () => false,
+      probarTerminal: async () => { throw new Error('ConPTY no disponible') },
       version: 'v22.12.0',
     })
 
-    expect(resultado.terminales).toEqual({ tipo: 'conpty', disponible: false })
+    expect(resultado.terminales).toEqual({ tipo: 'conpty', disponible: false, detalle: null })
     expect(ejecutar).toHaveBeenCalledWith('git', ['--version'])
     expect(resultado.git).toBe('git version 2.51.0')
     expect(ejecutar).not.toHaveBeenCalledWith('tmux', ['-V'])
@@ -75,12 +75,24 @@ describe('diagnosticar', () => {
       rutas: rutasBase('macos', home, {}),
       raices: [],
       ejecutar,
-      cargarPty: () => false,
+      probarTerminal: async () => { throw new Error('ConPTY no disponible') },
       version: 'v22.12.0',
     })
 
     expect(resultado.codex.baseDeDatos).toBe('state_12.sqlite')
-    expect(resultado.terminales).toEqual({ tipo: 'tmux', disponible: true })
+    expect(resultado.terminales).toEqual({ tipo: 'tmux', disponible: true, detalle: null })
     expect(ejecutar).toHaveBeenCalledWith('tmux', ['-V'])
+  })
+
+  it('en Windows prueba ConPTY de verdad y cuenta dónde están claude y codex', async () => {
+    const resultado = await diagnosticar({
+      so: 'windows',
+      rutas: rutasBase('windows', 'C:\\Users\\pedro', {}),
+      raices: [],
+      ejecutar: async () => 'git version 2.51.0',
+      probarTerminal: async () => ({ disponible: true, detalle: 'C:\\nvm\\claude.cmd\nRemoteSigned' }),
+      version: 'v22.12.0',
+    })
+    expect(resultado.terminales).toEqual({ tipo: 'conpty', disponible: true, detalle: 'C:\\nvm\\claude.cmd\nRemoteSigned' })
   })
 })

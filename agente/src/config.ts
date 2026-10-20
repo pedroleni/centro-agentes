@@ -19,7 +19,7 @@ function configPredeterminada(
   const moduloPath = so === 'windows' ? path.win32 : path
   const raices = ['Desktop', 'Downloads', 'Documents'].map((nombre) =>
     moduloPath.join(home, nombre))
-  const oneDrive = env.OneDrive || env.OneDriveConsumer
+  const oneDrive = env.OneDrive || env.OneDriveConsumer || env.OneDriveCommercial
   if (so === 'windows' && oneDrive !== undefined) {
     raices.push(
       ...['Desktop', 'Documents', 'Escritorio', 'Documentos'].map((nombre) =>

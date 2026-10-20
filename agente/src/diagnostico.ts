@@ -9,7 +9,9 @@ export type Diagnostico = {
   claude: { existe: boolean; proyectos: number; sesionesVivas: number }
   codex: { existe: boolean; baseDeDatos: string | null; rollouts: boolean }
   git: string | null
-  terminales: { tipo: 'tmux' | 'conpty'; disponible: boolean }
+  // En Windows, `detalle` es lo que contesta PowerShell en un ConPTY de verdad:
+  // dónde están claude y codex y la política de ejecución.
+  terminales: { tipo: 'tmux' | 'conpty'; disponible: boolean; detalle: string | null }
   raices: { ruta: string; existe: boolean }[]
 }
 
@@ -18,7 +20,7 @@ type DependenciasDiagnostico = {
   rutas: RutasBase
   raices: string[]
   ejecutar(cmd: string, args: string[]): Promise<string>
-  cargarPty(): boolean
+  probarTerminal(): Promise<{ disponible: boolean; detalle: string | null }>
   version: string
 }
 
@@ -97,10 +99,11 @@ export async function diagnosticar(dep: DependenciasDiagnostico): Promise<Diagno
   ])
 
   const terminales: Diagnostico['terminales'] = dep.so === 'windows'
-    ? { tipo: 'conpty', disponible: dep.cargarPty() }
+    ? { tipo: 'conpty', ...(await dep.probarTerminal().catch(() => ({ disponible: false, detalle: null }))) }
     : {
         tipo: 'tmux',
         disponible: await intentarEjecutar(dep.ejecutar, 'tmux', ['-V']) !== null,
+        detalle: null,
       }
 
   return {

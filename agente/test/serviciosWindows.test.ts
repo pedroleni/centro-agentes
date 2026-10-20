@@ -26,14 +26,24 @@ describe('servicios de Windows', () => {
     expect(script).toContain('exit $LASTEXITCODE')
   })
 
+  it('el lanzador reinicia el agente si se cae (el Programador solo reintenta si no arranca)', () => {
+    const script = leer('agente-windows.ps1')
+    expect(script).toContain('while ($true)')
+    expect(script).toContain('if ($LASTEXITCODE -eq 0)')
+    expect(script).toContain('Start-Sleep -Seconds 10')
+  })
+
   it('la tarea programada no caduca y se reinicia si falla', () => {
     const script = leer('instalar-agente-windows.ps1')
 
     expect(script).toContain("Register-ScheduledTask -TaskName 'centro-agentes agente'")
     // Con dominio: vale para cuentas locales, de Microsoft y de dominio.
     expect(script).toContain('New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\\$env:USERNAME"')
-    expect(script).toContain('powershell.exe')
-    expect(script).toContain('-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File')
+    // conhost --headless: con Windows Terminal como consola por defecto,
+    // -WindowStyle Hidden no oculta la ventana (y cerrarla mataría el agente).
+    expect(script).toContain("-Execute 'conhost.exe'")
+    expect(script).toContain('--headless powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File')
+    expect(script).toContain('-Priority 4')
     expect(script).toContain('agente-windows.ps1')
     expect(script).toContain('-ExecutionTimeLimit ([TimeSpan]::Zero)')
     expect(script).toContain('-RestartCount 999')

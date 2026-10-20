@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs'
 import type { Instantanea, TerminalInfo } from '@centro/compartido'
 import type { GestorTerminales } from './gestor.js'
 import { ordenTerminal } from './ordenes.js'
@@ -14,10 +15,19 @@ export type ResultadoTerminal =
   | { ok: true; terminal: TerminalInfo }
   | { ok: false; estado: 400 | 404 | 409 | 429 | 500; error: string }
 
+function carpetaExiste(ruta: string): boolean {
+  try {
+    return statSync(ruta).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 export async function crearTerminalPedido(
   pedido: PedidoTerminal,
   instantanea: Pick<Instantanea, 'maquina' | 'agentes' | 'proyectos' | 'terminales'>,
   gestor: Pick<GestorTerminales, 'crear'>,
+  opciones: { existeCarpeta?(ruta: string): boolean } = {},
 ): Promise<ResultadoTerminal> {
   let orden
   if (pedido.accion === 'continuar') {
@@ -35,6 +45,11 @@ export async function crearTerminalPedido(
   }
   if ('error' in orden) {
     return { ok: false, estado: orden.error === 'Esta sesión sigue abierta en otro sitio' ? 409 : 400, error: orden.error }
+  }
+  // Una sesión de hace días puede apuntar a una carpeta movida o borrada. En
+  // Windows, node-pty crea la pseudoconsola antes de fallar y no la libera.
+  if (!(opciones.existeCarpeta ?? carpetaExiste)(orden.cwd)) {
+    return { ok: false, estado: 400, error: 'La carpeta ya no existe en esta máquina' }
   }
   try {
     return { ok: true, terminal: await gestor.crear(orden) }
