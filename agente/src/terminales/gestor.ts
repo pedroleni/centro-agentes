@@ -29,10 +29,22 @@ export type Enganche = {
   soltar(): void
 }
 
+export type GestorTerminales = {
+  listar(): Promise<TerminalInfo[]>
+  crear(orden: OrdenTerminal): Promise<TerminalInfo>
+  adjuntar(
+    id: string,
+    tamano: { cols: number; rows: number },
+    alDatos: (datos: string) => void,
+    alSalir: () => void,
+  ): Enganche
+  cerrar(id: string): Promise<void>
+}
+
 const ID = /^[0-9a-f]{12}$/
 const FORMATO = '#{session_name}\t#{session_created}\t#{@ca_titulo}\t#{@ca_tipo}\t#{@ca_agente}\t#{@ca_proyecto}'
 
-function acotar(valor: number, minimo: number, maximo: number): number {
+export function acotar(valor: number, minimo: number, maximo: number): number {
   return Math.min(maximo, Math.max(minimo, Math.round(Number.isFinite(valor) ? valor : minimo)))
 }
 
@@ -57,7 +69,18 @@ export function entornoTerminal(entorno: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...limpio, TERM: 'xterm-256color' }
 }
 
-function limpio(texto: string): string {
+// Un pty que ya ha terminado lanza al escribir o redimensionar (EBADF). Pasa de
+// verdad: un cambio de tamaño que llega justo después de salir de Claude. Sin
+// esto, la excepción tumbaría el agente desde el manejador del WebSocket.
+export function sinFallo(accion: () => void): void {
+  try {
+    accion()
+  } catch {
+    // El terminal ya no existe: su fin llega por onExit.
+  }
+}
+
+export function limpio(texto: string): string {
   return texto.replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, 200)
 }
 
@@ -67,7 +90,7 @@ export function crearGestorTerminales(dep: {
   ahora?: () => number
   maximo?: number
   socket?: string
-}) {
+}): GestorTerminales {
   const ahora = dep.ahora ?? Date.now
   const maximo = dep.maximo ?? 6
   const servidor = dep.socket === undefined ? [] : ['-L', dep.socket]
@@ -119,9 +142,9 @@ export function crearGestorTerminales(dep: {
       pty.onData(alDatos)
       pty.onExit(() => alSalir())
       return {
-        escribir: (datos) => pty.write(datos),
-        redimensionar: (cols, rows) => pty.resize(acotar(cols, 20, 400), acotar(rows, 5, 120)),
-        soltar: () => pty.kill(),
+        escribir: (datos) => sinFallo(() => pty.write(datos)),
+        redimensionar: (cols, rows) => sinFallo(() => pty.resize(acotar(cols, 20, 400), acotar(rows, 5, 120))),
+        soltar: () => sinFallo(() => pty.kill()),
       }
     },
 
@@ -175,8 +198,6 @@ export function crearGestorTerminales(dep: {
     }
   }
 }
-
-export type GestorTerminales = ReturnType<typeof crearGestorTerminales>
 
 const execFileAsync = promisify(execFile)
 

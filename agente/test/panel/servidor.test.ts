@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { arrancarPanel } from '../../src/panel/servidor.js'
+import { esperarA } from '../ayudas/esperar.js'
 import { crearGestorTerminalesReal } from '../../src/terminales/gestor.js'
 
 // Sockets y tmux reales: se salta en el sandbox de Codex o sin tmux.
@@ -75,10 +76,10 @@ describe.skipIf(sinEntorno)('WebSocket de terminal del panel local', () => {
     let salida = ''
     socket.on('message', (d) => { salida += d.toString() })
     const cierre = new Promise<number>((r) => socket.on('close', (codigo) => r(codigo)))
-    await new Promise((r) => setTimeout(r, 400))
+    // Enganchado cuando tmux pinta la pantalla; después, hasta que vuelve el eco.
+    await esperarA(() => salida !== '')
     socket.send(JSON.stringify({ tipo: 'entrada', datos: 'eco-del-terminal\r' }))
-    await new Promise((r) => setTimeout(r, 600))
-    expect(salida).toContain('eco-del-terminal')
+    await esperarA(() => salida.includes('eco-del-terminal'))
     await gestor.cerrar(id)
     expect(await cierre).toBe(4000)
   })

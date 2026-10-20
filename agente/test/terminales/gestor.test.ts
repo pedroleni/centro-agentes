@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { crearGestorTerminales, entornoTerminal, type PtyMinimo } from '../../src/terminales/gestor.js'
+import { esperarA } from '../ayudas/esperar.js'
 
 const orden = { cwd: '/tmp', argv: ['/bin/zsh', '-lc', 'exec claude'], titulo: 'Claude · prueba', tipo: 'claude' as const, agenteId: null, proyectoId: 'aaaaaaaaaaaa' }
 
@@ -134,6 +135,19 @@ describe('gestor de terminales', () => {
     expect(f.pty.kill).toHaveBeenCalled()
   })
 
+  it('no se cae si el pty ya ha terminado al escribir, redimensionar o soltar', () => {
+    const f = falsos()
+    const roto = () => { throw new Error('ioctl(2) failed, EBADF') }
+    f.pty.resize.mockImplementation(roto)
+    f.pty.write.mockImplementation(roto)
+    f.pty.kill.mockImplementation(roto)
+    const gestor = crearGestorTerminales({ tmux: f.tmux, abrirPty: f.abrirPty })
+    const enganche = gestor.adjuntar('0123456789ab', { cols: 80, rows: 24 }, () => {}, () => {})
+    expect(() => enganche.redimensionar(100, 30)).not.toThrow()
+    expect(() => enganche.escribir('ls\r')).not.toThrow()
+    expect(() => enganche.soltar()).not.toThrow()
+  })
+
   it('rechaza ids que no son de 12 hex al enganchar o cerrar', async () => {
     const gestor = crearGestorTerminales({ tmux: falsos().tmux, abrirPty: falsos().abrirPty })
     expect(() => gestor.adjuntar('x; ls', { cols: 80, rows: 24 }, () => {}, () => {})).toThrow()
@@ -159,8 +173,7 @@ describe.skipIf(sinTmux)('gestor de terminales con tmux real', () => {
     const info = await gestor.crear({ ...orden, argv: ['/bin/sh', '-c', 'echo hola-terminal; sleep 5'] })
     let salida = ''
     const enganche = gestor.adjuntar(info.id, { cols: 80, rows: 24 }, (d) => { salida += d }, () => {})
-    await new Promise((r) => setTimeout(r, 1_000))
-    expect(salida).toContain('hola-terminal')
+    await esperarA(() => salida.includes('hola-terminal'))
     expect((await gestor.listar()).find((t) => t.id === info.id)?.titulo).toBe('Claude · prueba')
     enganche.soltar()
     await gestor.cerrar(info.id)
@@ -174,8 +187,9 @@ describe.skipIf(sinTmux)('gestor de terminales con tmux real', () => {
     temporales.push(carpeta, fuera)
     const gestor = crearGestorTerminalesReal(socket)
     const info = await gestor.crear({ ...orden, cwd: carpeta, argv: ['/bin/sh', '-c', `pwd -P > ${fuera}/pwd.txt; sleep 5`] })
-    await new Promise((r) => setTimeout(r, 800))
-    expect((await readFile(path.join(fuera, 'pwd.txt'), 'utf8')).trim()).toBe(await realpath(carpeta))
+    const leido = () => readFile(path.join(fuera, 'pwd.txt'), 'utf8').catch(() => '')
+    await esperarA(async () => (await leido()).trim() !== '')
+    expect((await leido()).trim()).toBe(await realpath(carpeta))
     await gestor.cerrar(info.id)
   })
 })

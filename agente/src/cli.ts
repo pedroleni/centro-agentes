@@ -7,12 +7,14 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type { SO } from '@centro/compartido'
 import { cargarConfig } from './config.js'
+import { diagnosticar } from './diagnostico.js'
 import { construirInstantanea } from './instantanea.js'
 import { commitsRecientes } from './lectores/git.js'
 import { crearRegistroFuentes, leerLinea } from './linea.js'
 import { crearCacheInstantanea } from './panel/cache.js'
 import { crearObtenerLinea } from './panel/obtenerLinea.js'
-import { crearGestorTerminalesReal } from './terminales/gestor.js'
+import { probarConptyReal } from './terminales/gestorConpty.js'
+import { crearGestorTerminalesDelSistema } from './terminales/sistema.js'
 import { crearTerminalPedido } from './terminales/servicio.js'
 import { darDeAlta, leerConfigConexion, rutaConfigConexion } from './alta.js'
 import { crearConexionHub, urlWebSocket, type SocketMinimo } from './conexionHub.js'
@@ -79,7 +81,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   const home = os.homedir()
   const so = sistemaOperativo(process.platform)
   const opciones = argumentos.slice(1)
-  const cfg = cargarConfig(rutaConfig(opciones), home)
+  const cfg = cargarConfig(rutaConfig(opciones), home, so, process.env)
   const rutas = rutasBase(so, home, process.env)
   const construir = () => construirInstantanea({
     cfg,
@@ -96,11 +98,24 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
     return
   }
 
+  if (argumentos[0] === 'diagnostico') {
+    const diagnostico = await diagnosticar({
+      so,
+      rutas,
+      raices: cfg.raices,
+      ejecutar,
+      probarTerminal: probarConptyReal,
+      version: process.version,
+    })
+    process.stdout.write(`${JSON.stringify(diagnostico, null, 2)}\n`)
+    return
+  }
+
   // Datos que comparten el panel local y la conexión con el hub: la instantánea en
   // caché, los commits de un proyecto y la línea de tiempo de un agente.
   const crearDatos = () => {
     const registroFuentes = crearRegistroFuentes()
-    const gestor = crearGestorTerminalesReal()
+    const gestor = crearGestorTerminalesDelSistema(process.platform)
     const cache = crearCacheInstantanea(() => registroFuentes.construir((registrarFuente) =>
       construirInstantanea({ cfg, rutas, so, ahoraMs: Date.now(), pidVivo, ejecutar, registrarFuente, listarTerminales: gestor.listar })))
     return {
@@ -197,7 +212,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   }
 
   throw new Error(
-    'Uso: cli.ts instantanea | panel [--puerto N] | alta --hub <url> --codigo <c> [--nombre <n>] | conectar   (todas admiten --config <ruta>)',
+    'Uso: cli.ts instantanea | diagnostico | panel [--puerto N] | alta --hub <url> --codigo <c> [--nombre <n>] | conectar   (todas admiten --config <ruta>)',
   )
 }
 

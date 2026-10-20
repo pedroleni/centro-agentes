@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises'
 import type { Instantanea, TerminalInfo } from '@centro/compartido'
 import type { GestorTerminales } from './gestor.js'
 import { ordenTerminal } from './ordenes.js'
@@ -14,10 +15,21 @@ export type ResultadoTerminal =
   | { ok: true; terminal: TerminalInfo }
   | { ok: false; estado: 400 | 404 | 409 | 429 | 500; error: string }
 
+// Asíncrono: con una carpeta de red caída, un stat síncrono congelaría el agente
+// (y su conexión con el hub) durante todo el tiempo de espera de SMB.
+async function carpetaExiste(ruta: string): Promise<boolean> {
+  try {
+    return (await stat(ruta)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 export async function crearTerminalPedido(
   pedido: PedidoTerminal,
-  instantanea: Pick<Instantanea, 'agentes' | 'proyectos' | 'terminales'>,
+  instantanea: Pick<Instantanea, 'maquina' | 'agentes' | 'proyectos' | 'terminales'>,
   gestor: Pick<GestorTerminales, 'crear'>,
+  opciones: { existeCarpeta?(ruta: string): boolean | Promise<boolean> } = {},
 ): Promise<ResultadoTerminal> {
   let orden
   if (pedido.accion === 'continuar') {
@@ -27,14 +39,19 @@ export async function crearTerminalPedido(
     if (abierto !== undefined) return { ok: true, terminal: abierto }
     const agente = instantanea.agentes.find((candidato) => candidato.id === pedido.agenteId)
     if (agente === undefined) return { ok: false, estado: 404, error: 'Sesión no encontrada en esta máquina' }
-    orden = ordenTerminal({ accion: 'continuar', agente })
+    orden = ordenTerminal({ accion: 'continuar', agente }, instantanea.maquina.so)
   } else {
     const proyecto = instantanea.proyectos.find((candidato) => candidato.id === pedido.proyectoId)
     if (proyecto === undefined) return { ok: false, estado: 404, error: 'Proyecto no encontrado en esta máquina' }
-    orden = ordenTerminal({ accion: 'nueva', tipo: pedido.tipo, proyecto })
+    orden = ordenTerminal({ accion: 'nueva', tipo: pedido.tipo, proyecto }, instantanea.maquina.so)
   }
   if ('error' in orden) {
     return { ok: false, estado: orden.error === 'Esta sesión sigue abierta en otro sitio' ? 409 : 400, error: orden.error }
+  }
+  // Una sesión de hace días puede apuntar a una carpeta movida o borrada. En
+  // Windows, node-pty crea la pseudoconsola antes de fallar y no la libera.
+  if (!(await (opciones.existeCarpeta ?? carpetaExiste)(orden.cwd))) {
+    return { ok: false, estado: 400, error: 'La carpeta ya no existe en esta máquina' }
   }
   try {
     return { ok: true, terminal: await gestor.crear(orden) }

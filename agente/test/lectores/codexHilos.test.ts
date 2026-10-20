@@ -39,6 +39,7 @@ function insertarHilo(
     archivado?: number
     source?: string
     cwd?: string
+    rollout?: string
   },
 ): void {
   base
@@ -57,7 +58,7 @@ function insertarHilo(
       hilo.archivado ?? 0,
       1_000,
       hilo.actualizadoMs,
-      `/rollouts/${hilo.id}.jsonl`,
+      hilo.rollout ?? `/rollouts/${hilo.id}.jsonl`,
     )
 }
 
@@ -123,6 +124,31 @@ describe('leerHilosCodex', () => {
     expect(leerHilosCodex(directorio, 0).map((hilo) => hilo.id)).toEqual(['visible-en-wal'])
 
     escritor.exec('ROLLBACK')
+  })
+
+  it('normaliza el cwd y el rollout con prefijo de ruta larga de Windows', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const base = crearBase(path.join(directorio, 'state_12.sqlite'))
+    insertarHilo(base, {
+      id: 'windows',
+      actualizadoMs: 8_000,
+      cwd: '\\\\?\\C:\\Users\\pedro\\web',
+      rollout: '\\\\?\\C:\\Users\\pedro\\.codex\\sessions\\windows.jsonl',
+    })
+
+    expect(leerHilosCodex(directorio, 0)[0]).toMatchObject({
+      cwd: 'C:\\Users\\pedro\\web',
+      rollout: 'C:\\Users\\pedro\\.codex\\sessions\\windows.jsonl',
+    })
+  })
+
+  it('un hilo sin cwd ni rollout no hace desaparecer a los demás', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const base = crearBase(path.join(directorio, 'state_13.sqlite'))
+    insertarHilo(base, { id: 'normal', actualizadoMs: 8_000 })
+    insertarHilo(base, { id: 'nulo', actualizadoMs: 9_000 })
+    base.exec("UPDATE threads SET rollout_path = NULL, cwd = NULL WHERE id = 'nulo'")
+    expect(leerHilosCodex(directorio, 0).map((hilo) => hilo.id)).toEqual(['nulo', 'normal'])
   })
 
   it('devuelve una lista vacia si no hay base de datos', async () => {

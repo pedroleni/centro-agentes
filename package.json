@@ -12,19 +12,20 @@
     "web"
   ],
   "scripts": {
-    "test": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' vitest run",
+    "test": "vitest run",
     "lint": "eslint .",
     "build": "tsc -b compartido agente hub && tsc -p web",
-    "instantanea": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts instantanea",
+    "instantanea": "tsx agente/src/cli.ts instantanea",
     "codex:task": "bash scripts/dev/codex-task.sh",
     "codex:monitor": "node scripts/dev/codex-monitor.mjs",
     "build:web": "vite build web",
     "dev:web": "vite web",
-    "panel": "npm run build:web && NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts panel",
-    "hub": "npm run build:web && NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx hub/src/cli.ts servir",
-    "hub:configurar": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx hub/src/cli.ts configurar",
-    "agente:alta": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts alta",
-    "agente:conectar": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts conectar",
+    "panel": "npm run build:web && tsx agente/src/cli.ts panel",
+    "hub": "npm run build:web && tsx hub/src/cli.ts servir",
+    "hub:configurar": "tsx hub/src/cli.ts configurar",
+    "agente:alta": "tsx agente/src/cli.ts alta",
+    "agente:conectar": "tsx agente/src/cli.ts conectar",
+    "agente:diagnostico": "tsx agente/src/cli.ts diagnostico",
     "postinstall": "node scripts/permisos-node-pty.mjs"
   },
   "devDependencies": {
