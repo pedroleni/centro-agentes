@@ -129,8 +129,8 @@ npm run instantanea  # JSON con todo lo que el agente ve en esta máquina
 npm run dev:web      # front con recarga en caliente (requiere el panel en marcha para la API)
 ```
 
-Requiere Node ≥ 22.12. Los scripts activan `node:sqlite` con
-`--experimental-sqlite`.
+Requiere Node ≥ 22.12. El `.npmrc` del repo activa `node:sqlite`
+(`--experimental-sqlite`) en todos los scripts de npm, en macOS y en Windows.
 
 ## Configuración del agente
 
