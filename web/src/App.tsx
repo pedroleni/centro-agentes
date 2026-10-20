@@ -1,6 +1,7 @@
 import type { Commit } from '@centro/compartido'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { obtenerCommits, obtenerLinea, type ResultadoLinea } from './api.js'
+import { ErrorApi, obtenerCommits, obtenerLinea, type ResultadoLinea } from './api.js'
+import { fusionarLinea } from './logica/linea.js'
 import { usarInstantanea } from './usarInstantanea.js'
 import { DetalleAgente } from './vistas/DetalleAgente.js'
 import { FichaProyecto } from './vistas/FichaProyecto.js'
@@ -89,55 +90,49 @@ export function App() {
       })
   }, [hashProyecto, instantanea.actualizadaMs, proyectoAbierto, proyectoId])
 
-  const combinarLinea = useCallback((nueva: ResultadoLinea, conservarAntes: boolean) => {
-    establecerLinea((anterior) => {
-      if (anterior === null) return nueva
-      const eventos = [...anterior.eventos, ...nueva.eventos]
-      const vistos = new Set<string>()
-      const unicos = eventos.filter((evento) => {
-        const clave = `${evento.fechaMs}\u0000${evento.texto}`
-        if (vistos.has(clave)) return false
-        vistos.add(clave)
-        return true
-      }).sort((a, b) => a.fechaMs - b.fechaMs)
-      return {
-        eventos: unicos,
-        antes: conservarAntes ? anterior.antes : nueva.antes,
-      }
-    })
+  // El agente cuya línea se está mostrando. Las respuestas que llegan tarde de otro
+  // agente (tras navegar) se descartan comparando con este valor.
+  const agenteVigente = useRef<string | null>(agenteId)
+  agenteVigente.current = agenteId
+
+  const aplicarLinea = useCallback((idPedido: string, nueva: ResultadoLinea, conservarAntes: boolean) => {
+    if (agenteVigente.current !== idPedido) return
+    establecerAgenteNoDisponible(false)
+    establecerLinea((anterior) => (anterior === null ? nueva : fusionarLinea(anterior, nueva, conservarAntes)))
+  }, [])
+
+  // Solo un 404 significa que el agente ya no existe; cualquier otro fallo
+  // (red, 500, reinicio) se reintenta en el siguiente ciclo.
+  const fallarLinea = useCallback((idPedido: string, error: unknown) => {
+    if (agenteVigente.current !== idPedido) return
+    if (error instanceof ErrorApi && error.estado === 404) establecerAgenteNoDisponible(true)
   }, [])
 
   useEffect(() => {
     establecerLinea(null)
     establecerAgenteNoDisponible(false)
     if (agenteId === null) return
-    let vigente = true
     void obtenerLinea(agenteId, null)
-      .then((resultado) => {
-        if (vigente) combinarLinea(resultado, false)
-      })
-      .catch(() => {
-        if (vigente) establecerAgenteNoDisponible(true)
-      })
-    return () => { vigente = false }
-  }, [agenteId, combinarLinea])
+      .then((resultado) => aplicarLinea(agenteId, resultado, false))
+      .catch((error: unknown) => fallarLinea(agenteId, error))
+  }, [agenteId, aplicarLinea, fallarLinea])
 
   useEffect(() => {
     if (agenteId === null || !agenteActivo) return
     const temporizador = setInterval(() => {
       void obtenerLinea(agenteId, null)
-        .then((resultado) => combinarLinea(resultado, true))
-        .catch(() => establecerAgenteNoDisponible(true))
+        .then((resultado) => aplicarLinea(agenteId, resultado, true))
+        .catch((error: unknown) => fallarLinea(agenteId, error))
     }, 3_000)
     return () => clearInterval(temporizador)
-  }, [agenteActivo, agenteId, combinarLinea])
+  }, [agenteActivo, agenteId, aplicarLinea, fallarLinea])
 
   const cargarAnteriores = useCallback(() => {
     if (agenteId === null || linea?.antes == null) return
     void obtenerLinea(agenteId, linea.antes)
-      .then((resultado) => combinarLinea(resultado, false))
-      .catch(() => establecerAgenteNoDisponible(true))
-  }, [agenteId, combinarLinea, linea?.antes])
+      .then((resultado) => aplicarLinea(agenteId, resultado, false))
+      .catch((error: unknown) => fallarLinea(agenteId, error))
+  }, [agenteId, aplicarLinea, fallarLinea, linea?.antes])
 
   let contenido
   if (coincidenciaAgente !== null) {

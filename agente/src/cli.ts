@@ -11,6 +11,7 @@ import { construirInstantanea } from './instantanea.js'
 import { commitsRecientes } from './lectores/git.js'
 import { crearRegistroFuentes, leerLinea } from './linea.js'
 import { crearCacheInstantanea } from './panel/cache.js'
+import { crearObtenerLinea } from './panel/obtenerLinea.js'
 import { crearManejador } from './panel/manejador.js'
 import { arrancarPanel } from './panel/servidor.js'
 import { rutasBase } from './rutas/base.js'
@@ -108,10 +109,11 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
         // Sin límite de fecha: un proyecto parado también debe enseñar su historial real.
         return commitsRecientes(proyecto.ruta, 0, 100)
       },
-      obtenerLinea: async (id, antes) => {
-        const fuente = registroFuentes.obtener(id)
-        return fuente === null ? null : leerLinea(fuente, antes)
-      },
+      obtenerLinea: crearObtenerLinea({
+        obtenerInstantanea: cache.obtener,
+        obtenerFuente: (id) => registroFuentes.obtener(id),
+        leer: leerLinea,
+      }),
       leerEstatico: async (ruta) => {
         try {
           return await readFile(ruta)

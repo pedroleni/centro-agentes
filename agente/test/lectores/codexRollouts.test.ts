@@ -85,6 +85,35 @@ describe('crearLectorRollouts', () => {
     expect(resumen.resumenActividad.ficheros).toEqual(['dos.test.ts', 'uno.ts'])
   })
 
+  it('cuenta una sola edición cuando un exec con patch va seguido de su patch_apply_end', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'rollout-patch-js.jsonl')
+    await writeFile(ruta, [
+      {
+        timestamp: '2026-10-20T08:00:00.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'c1',
+          input: 'const patch = "*** Begin Patch\\n*** Update File: /repo/src/a.ts\\n@@\\n-x\\n+y\\n*** End Patch";\nawait tools.apply_patch(patch);',
+        },
+      },
+      {
+        timestamp: '2026-10-20T08:00:01.000Z',
+        type: 'event_msg',
+        payload: { type: 'patch_apply_end', changes: { '/repo/src/a.ts': { type: 'update' } }, success: true },
+      },
+    ].map(linea).join(''))
+
+    const resumen = await crearLectorRollouts().resumen(ruta)
+
+    expect(resumen.resumenActividad.ediciones).toBe(1)
+    expect(resumen.resumenActividad.comandos).toBe(0)
+    expect(resumen.resumenActividad.ficheros).toEqual(['a.ts'])
+    expect(resumen.ultimaAccion?.texto).toBe('a.ts')
+  })
+
   it('convierte un function_call en la última acción de comando', async () => {
     const directorio = await crearDirectorioTemporal()
     const ruta = path.join(directorio, 'rollout-comando.jsonl')
@@ -114,7 +143,7 @@ describe('crearLectorRollouts', () => {
     })
   })
 
-  it('clasifica un exec sin cmd como patch o código de herramienta', async () => {
+  it('ignora un exec con patch (lo cuenta su patch_apply_end) y marca el resto como código de herramienta', async () => {
     const directorio = await crearDirectorioTemporal()
     const ruta = path.join(directorio, 'rollout-exec-sin-cmd.jsonl')
     await writeFile(ruta, [
@@ -143,9 +172,9 @@ describe('crearLectorRollouts', () => {
     })
     expect(resumen.resumenActividad).toEqual({
       comandos: 1,
-      ediciones: 1,
+      ediciones: 0,
       mensajes: 0,
-      ficheros: ['viejo.ts', 'nuevo.ts'],
+      ficheros: [],
     })
   })
 

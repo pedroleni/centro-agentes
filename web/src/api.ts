@@ -7,9 +7,15 @@ function opcionesPeticion(): RequestInit {
   return { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }
 }
 
+export class ErrorApi extends Error {
+  constructor(readonly estado: number) {
+    super(`La API respondió con ${estado}`)
+  }
+}
+
 async function obtenerJson(respuesta: Response): Promise<unknown> {
   if (!respuesta.ok) {
-    throw new Error(`La API respondió con ${respuesta.status}`)
+    throw new ErrorApi(respuesta.status)
   }
   return respuesta.json()
 }

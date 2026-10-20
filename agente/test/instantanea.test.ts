@@ -203,7 +203,7 @@ describe('construirInstantanea', () => {
     )
 
     const instantanea = await construir(hogar)
-    const tarea = instantanea.agentes.find((agente) => agente.id.includes('sin-hilo.jsonl'))
+    const tarea = instantanea.agentes.find((agente) => agente.modo === 'tarea' && agente.titulo.startsWith('xxxxxxxxxx'))
 
     expect(tarea?.titulo).toBe(`${'x'.repeat(90)}…`)
   })
@@ -239,7 +239,7 @@ describe('construirInstantanea', () => {
 
     const instantanea = await construir(hogar)
 
-    expect(instantanea.agentes.some((agente) => agente.id.includes('20260101-000000-task'))).toBe(false)
+    expect(instantanea.agentes.some((agente) => agente.titulo === 'vieja')).toBe(false)
   })
 
   it('no expone el contenido de un HANDOFF enlazado a un .env', async () => {
@@ -353,5 +353,21 @@ describe('construirInstantanea', () => {
 
     expect(agente?.proyectoIds).toEqual([hogar.idA])
     expect(agente?.commitsPorProyecto).toEqual({ [hogar.idB]: [hogar.ahoraMs] })
+  })
+  it('da a una tarea de Codex sin hilo un id sin rutas y registra su log como fuente', async () => {
+    const hogar = await preparar()
+    const log = path.join(hogar.proyectoA, '.codex-logs', '20261020-120000-task.jsonl')
+    await writeFile(
+      log,
+      `${JSON.stringify({ type: 'task_meta', effort: 'low', model: 'gpt-5.6-luna', prompt: 'tarea suelta' })}\n`,
+    )
+    const fuentes = new Map<string, { tipo: string; ruta: string }>()
+
+    const instantanea = await construir(hogar, undefined, (id, fuente) => fuentes.set(id, fuente))
+
+    const tarea = instantanea.agentes.find((agente) => agente.titulo === 'tarea suelta')
+    expect(tarea).toBeDefined()
+    expect(tarea!.id).toMatch(/^codex-tarea:[0-9a-f]{16}$/)
+    expect(fuentes.get(tarea!.id)).toMatchObject({ tipo: 'codex-log' })
   })
 })

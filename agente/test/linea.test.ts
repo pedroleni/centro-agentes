@@ -231,7 +231,7 @@ describe('leerLinea', () => {
     }])
   })
 
-  it('convierte un exec sin cmd en edición o código de herramienta', async () => {
+  it('ignora un exec con patch y convierte el resto de exec sin cmd en código de herramienta', async () => {
     const ruta = await crearJsonl('exec-sin-cmd.jsonl', [
       {
         timestamp: '2026-10-20T09:00:00.000Z',
@@ -252,7 +252,6 @@ describe('leerLinea', () => {
     const resultado = await leerLinea(fuente('codex-rollout', ruta), null)
 
     expect(resultado.eventos).toEqual([
-      expect.objectContaining({ tipo: 'edicion', texto: 'uno.ts, dos.ts' }),
       expect.objectContaining({ tipo: 'comando', texto: 'Código de herramienta' }),
     ])
   })

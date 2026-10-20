@@ -60,3 +60,15 @@ describe('enmascararSecretos', () => {
     expect(duracionMs).toBeLessThan(200)
   })
 })
+
+describe('claves privadas cortadas', () => {
+  it('enmascara un bloque PEM sin END hasta el final del texto', () => {
+    const texto = 'salida:\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\nQUFBQUJBQUFBQkFBQUFC\n'
+    expect(enmascararSecretos(texto)).toBe('salida:\n«oculto»')
+  })
+
+  it('sigue dejando el texto normal que va después de un bloque completo', () => {
+    const texto = 'a\n-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\nfin'
+    expect(enmascararSecretos(texto)).toBe('a\n«oculto»\nfin')
+  })
+})

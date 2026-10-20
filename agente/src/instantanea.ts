@@ -446,7 +446,8 @@ function agenteDeTareaSinHilo(
   const { tarea, proyecto } = item
   const estado = estadoTarea(tarea.completada, tarea.mtimeMs, ahoraMs)
   return {
-    id: `codex-tarea:${tarea.archivo}`,
+    // El id no lleva la ruta del log: la API nunca debe exponer rutas.
+    id: `codex-tarea:${createHash('sha1').update(tarea.archivo).digest('hex').slice(0, 16)}`,
     tipo: 'codex',
     modo: 'tarea',
     titulo: enmascararSecretos(tituloDePrompt(tarea.prompt)),

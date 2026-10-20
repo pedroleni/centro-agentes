@@ -35,7 +35,8 @@ function enmascararClavesPrivadas(texto: string): string {
 
     const cierre = encabezado.replace('-----BEGIN ', '-----END ')
     const inicioCierre = texto.indexOf(cierre, finLinea + 5)
-    if (inicioCierre === -1) return resultado + texto.slice(posicion)
+    // Una clave cortada (p. ej. la salida de `head -3`) se oculta hasta el final.
+    if (inicioCierre === -1) return resultado + texto.slice(posicion, inicio) + OCULTO
     resultado += texto.slice(posicion, inicio) + OCULTO
     posicion = inicioCierre + cierre.length
   }

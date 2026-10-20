@@ -62,15 +62,6 @@ export function argumentosRollout(valor: unknown): Record<string, unknown> {
   }
 }
 
-export function ficherosPatch(patch: string): string[] {
-  const resultado: string[] = []
-  for (const coincidencia of patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)) {
-    const ruta = coincidencia[1]?.trim()
-    if (ruta !== undefined && ruta.length > 0) resultado.push(ruta)
-  }
-  return resultado
-}
-
 export function comandoDeCustomToolCall(input: unknown): string | null {
   const datos = argumentosRollout(input)
   const comandoDirecto = datos.cmd ?? datos.command
@@ -114,43 +105,14 @@ export function extraerAccionRollout(valor: unknown): AccionRolloutExtraida | nu
         return { accion: accionDeToolUse('Bash', { command: comando }, fechaMs) }
       }
       const contenido = typeof payload.input === 'string' ? payload.input : ''
-      if (contenido.includes('*** Begin Patch')) {
-        const ficheros = ficherosPatch(contenido)
-        const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
-        return {
-          accion: {
-            tipo: 'edicion',
-            texto: normalizarTextoAccion(nombres.join(', ')),
-            fechaMs,
-          },
-          ficherosEditados: ficheros,
-        }
-      }
+      // Un exec que aplica un patch no es un comando: la edición la cuenta su
+      // `patch_apply_end`, que trae los ficheros de forma fiable.
+      if (contenido.includes('*** Begin Patch')) return null
       return {
         accion: accionDeToolUse('Bash', { command: 'Código de herramienta' }, fechaMs),
       }
     }
-    if (payload.type === 'custom_tool_call' && payload.name === 'apply_patch') {
-      const datos = argumentosRollout(payload.arguments)
-      const contenido =
-        typeof payload.input === 'string'
-          ? payload.input
-          : typeof datos.patch === 'string'
-            ? datos.patch
-            : typeof datos.input === 'string'
-              ? datos.input
-              : ''
-      const ficheros = ficherosPatch(contenido)
-      const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
-      return {
-        accion: {
-          tipo: 'edicion',
-          texto: normalizarTextoAccion(nombres.join(', ')),
-          fechaMs,
-        },
-        ficherosEditados: ficheros,
-      }
-    }
+    // `apply_patch` tampoco cuenta: las ediciones salen solo de `patch_apply_end`.
     return null
   }
 
@@ -162,6 +124,7 @@ export function extraerAccionRollout(valor: unknown): AccionRolloutExtraida | nu
   ) {
     const rutas = Array.isArray(payload.changes) ? payload.changes : Object.keys(payload.changes)
     const ficheros = rutas.filter((cambio): cambio is string => typeof cambio === 'string')
+    if (ficheros.length === 0) return null
     const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
     return {
       accion: {

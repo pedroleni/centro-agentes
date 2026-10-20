@@ -51,6 +51,22 @@ function respuesta(cuerpo: unknown, estado = 200): Response {
   } as Response
 }
 
+
+function crearAgente(id: string, titulo: string): Agente {
+  return {
+    id, tipo: 'codex', modo: 'interactivo', titulo, cwd: '/proyectos/centro-agentes',
+    proyectoIds: [PROYECTO_ID], estado: 'en-curso', rol: 'codex', ultimaAccion: null,
+    resumenActividad: { comandos: 0, ediciones: 0, mensajes: 1, ficheros: [] },
+    modelo: 'gpt-5', esfuerzo: 'alto', contexto: null, tokensTotales: null, ultimoPrompt: null,
+    rama: 'main', pr: null, inicioMs: 1, ultimaActividadMs: 2, padreId: null, entrada: null,
+    puedeContinuar: false, tareas: [], commitsPorProyecto: {},
+  }
+}
+
+function lineaCon(texto: string, fechaMs = 10) {
+  return { antes: null, eventos: [{ fechaMs, tipo: 'asistente', texto, detalle: null }] }
+}
+
 describe('App', () => {
   it('carga la línea del agente, la refresca cada tres segundos y no duplica eventos', async () => {
     vi.useFakeTimers()
@@ -189,5 +205,71 @@ describe('App', () => {
     })
 
     expect(scrollTo).toHaveBeenCalledWith(0, 0)
+  })
+  it('tras un 500 en la línea sigue reintentando y la muestra cuando responde', async () => {
+    vi.useFakeTimers()
+    const agente = crearAgente('codex:a', 'Agente A')
+    window.location.hash = '#/agente/codex%3Aa'
+    let peticiones = 0
+    vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
+      const url = String(entrada)
+      if (url === '/api/instantanea') return respuesta(instantanea('h', 2, [agente]))
+      if (url.startsWith('/api/agentes/codex%3Aa/linea')) {
+        peticiones += 1
+        return peticiones === 1 ? respuesta({ error: 'x' }, 500) : respuesta(lineaCon('Ya responde'))
+      }
+      return respuesta({}, 404)
+    }))
+    render(<App />)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.queryByText('Este agente ya no está disponible')).toBeNull()
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
+    expect(screen.getByText('Ya responde')).toBeTruthy()
+    expect(screen.queryByText('Este agente ya no está disponible')).toBeNull()
+  })
+
+  it('solo un 404 de la línea marca el agente como no disponible', async () => {
+    const agente = crearAgente('codex:a', 'Agente A')
+    window.location.hash = '#/agente/codex%3Aa'
+    vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
+      const url = String(entrada)
+      if (url === '/api/instantanea') return respuesta(instantanea('h', 2, [agente]))
+      return respuesta({ error: 'No encontrado' }, 404)
+    }))
+    render(<App />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByText('Este agente ya no está disponible')).toBeTruthy()
+  })
+
+  it('una respuesta en vuelo del agente A no entra en la línea del agente B', async () => {
+    vi.useFakeTimers()
+    const a = crearAgente('codex:a', 'Agente A')
+    const b = crearAgente('codex:b', 'Agente B')
+    window.location.hash = '#/agente/codex%3Aa'
+    let soltarA: (r: Response) => void = () => {}
+    let peticionesA = 0
+    vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
+      const url = String(entrada)
+      if (url === '/api/instantanea') return respuesta(instantanea('h', 2, [a, b]))
+      if (url.startsWith('/api/agentes/codex%3Aa/linea')) {
+        peticionesA += 1
+        if (peticionesA === 1) return respuesta(lineaCon('Inicial de A'))
+        return new Promise<Response>((resolver) => { soltarA = resolver })
+      }
+      if (url.startsWith('/api/agentes/codex%3Ab/linea')) return respuesta(lineaCon('Inicial de B', 30))
+      return respuesta({}, 404)
+    }))
+    render(<App />)
+    await act(async () => { await Promise.resolve() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
+    expect(peticionesA).toBe(2)
+    await act(async () => {
+      window.location.hash = '#/agente/codex%3Ab'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+      await Promise.resolve()
+    })
+    await act(async () => { soltarA(respuesta(lineaCon('Tardía de A', 40))); await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByText('Inicial de B')).toBeTruthy()
+    expect(screen.queryByText('Tardía de A')).toBeNull()
   })
 })
