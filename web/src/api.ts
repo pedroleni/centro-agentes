@@ -1,4 +1,4 @@
-import { Commit, RespuestaMaquinas } from '@centro/compartido'
+import { Commit, RespuestaMaquinas, TerminalInfo } from '@centro/compartido'
 import { z } from 'zod'
 
 const TIEMPO_LIMITE_MS = 8_000
@@ -13,8 +13,8 @@ function opcionesPeticion(limiteMs = TIEMPO_LIMITE_MS): RequestInit {
 }
 
 export class ErrorApi extends Error {
-  constructor(readonly estado: number) {
-    super(`La API respondió con ${estado}`)
+  constructor(readonly estado: number, mensaje?: string) {
+    super(mensaje ?? `La API respondió con ${estado}`)
   }
 }
 
@@ -91,5 +91,33 @@ export async function crearCodigoAlta(): Promise<{ codigo: string; caducaMs: num
 
 export async function revocarMaquina(maquinaId: string): Promise<void> {
   const respuesta = await fetch(`/api/maquinas/${encodeURIComponent(maquinaId)}`, { ...opcionesPeticion(), method: 'DELETE' })
+  if (!respuesta.ok) throw new ErrorApi(respuesta.status)
+}
+
+export type PedidoTerminal =
+  | { accion: 'continuar'; agenteId: string }
+  | { accion: 'nueva'; tipo: 'claude' | 'codex'; proyectoId: string }
+
+// Crea un terminal en una máquina y devuelve sus datos. Los errores llevan el
+// mensaje del servidor (p. ej. "Esta sesión sigue abierta en otro sitio").
+export async function crearTerminal(maquinaId: string, pedido: PedidoTerminal): Promise<TerminalInfo> {
+  const respuesta = await fetch(`/api/maquinas/${encodeURIComponent(maquinaId)}/terminales`, {
+    ...opcionesPeticion(TIEMPO_LIMITE_MAQUINA_MS),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pedido),
+  })
+  if (!respuesta.ok) {
+    const cuerpo = (await respuesta.json().catch(() => ({}))) as { error?: string }
+    throw new ErrorApi(respuesta.status, cuerpo.error)
+  }
+  return TerminalInfo.parse(await respuesta.json())
+}
+
+export async function cerrarTerminal(maquinaId: string, terminalId: string): Promise<void> {
+  const respuesta = await fetch(`/api/maquinas/${encodeURIComponent(maquinaId)}/terminales/${terminalId}`, {
+    ...opcionesPeticion(),
+    method: 'DELETE',
+  })
   if (!respuesta.ok) throw new ErrorApi(respuesta.status)
 }

@@ -1,5 +1,5 @@
 import type { Commit } from '@centro/compartido'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { ErrorApi, obtenerCommitsDe, obtenerLineaDe, type ResultadoLinea } from './api.js'
 import { fusionarLinea } from './logica/linea.js'
 import { leerRuta, maquinaDeRuta } from './logica/rutas.js'
@@ -8,6 +8,9 @@ import { Entrar } from './vistas/Entrar.js'
 import { DetalleAgente } from './vistas/DetalleAgente.js'
 import { FichaProyecto } from './vistas/FichaProyecto.js'
 import { VistaGeneral } from './vistas/VistaGeneral.js'
+
+// xterm.js pesa: la vista del terminal se descarga solo al abrir uno.
+const VistaTerminal = lazy(() => import('./vistas/VistaTerminal.js').then((m) => ({ default: m.VistaTerminal })))
 
 export function App() {
   const [ruta, establecerRuta] = useState(window.location.hash || '#/')
@@ -137,6 +140,20 @@ export function App() {
   let contenido
   if (estado.sinSesion) {
     contenido = <Entrar alEntrar={estado.recargar} />
+  } else if (rutaLeida.vista === 'terminal') {
+    const terminal = datosMaquina?.terminales?.find((t) => t.id === rutaLeida.terminalId)
+    contenido = maquina === null && estado.datos === null
+      ? <p className="ca-empty">Cargando…</p>
+      : (
+        <Suspense fallback={<p className="ca-empty">Abriendo terminal…</p>}>
+          <VistaTerminal
+            maquinaId={rutaLeida.maquinaId}
+            maquinaNombre={maquina?.nombre ?? 'la máquina'}
+            terminalId={rutaLeida.terminalId}
+            titulo={terminal?.titulo ?? 'Terminal'}
+          />
+        </Suspense>
+      )
   } else if (agenteId !== null) {
     if (instantanea.datos === null && !instantanea.error) {
       contenido = <p className="ca-empty da-cargando">Cargando…</p>

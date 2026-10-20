@@ -8,6 +8,7 @@ import { EnDirecto } from './EnDirecto.js'
 import { EnVivo } from './EnVivo.js'
 import { FilaAgente } from './FilaAgente.js'
 import { TarjetaProyecto } from './TarjetaProyecto.js'
+import { rutaTerminal } from '../logica/rutas.js'
 
 type PropiedadesVistaGeneral = {
   respuesta: RespuestaMaquinas | null
@@ -52,6 +53,16 @@ function BloqueMaquina({ maquina, filtro, busqueda, ahora }: {
         </span>
         <span className={`ma-estado${maquina.conectada ? ' on' : ''}`}>{estadoMaquina(maquina, ahora)}</span>
       </div>
+      {(instantanea?.terminales ?? []).length > 0 && (
+        <div className="ma-terminales" aria-label="Terminales abiertos">
+          <span className="ma-terminales-titulo">Terminales abiertos</span>
+          {(instantanea?.terminales ?? []).map((terminal) => (
+            <a key={terminal.id} className="ma-terminal" href={rutaTerminal(maquina.id, terminal.id)} aria-label={`Entrar en ${terminal.titulo}`}>
+              <span aria-hidden="true">⌨</span> {terminal.titulo} <strong>Entrar ›</strong>
+            </a>
+          ))}
+        </div>
+      )}
       {instantanea === null || agrupacion === null ? (
         <p className="ca-empty">Sin datos todavía de esta máquina</p>
       ) : (
