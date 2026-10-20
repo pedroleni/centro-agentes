@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process'
+import { rm } from 'node:fs/promises'
 import type { Server } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import path from 'node:path'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { arrancarPanel } from '../../src/panel/servidor.js'
 import { crearGestorTerminalesReal } from '../../src/terminales/gestor.js'
@@ -8,16 +10,20 @@ import { crearGestorTerminalesReal } from '../../src/terminales/gestor.js'
 // Sockets y tmux reales: se salta en el sandbox de Codex o sin tmux.
 const sinEntorno = process.env.CODEX_SANDBOX !== undefined || (() => { try { execFileSync('tmux', ['-V']); return false } catch { return true } })()
 
+// Un servidor de tmux solo para estas pruebas: no toca los terminales de verdad.
+const SOCKET = `centro-agentes-prueba-panel-${process.pid}`
 const servidores: Server[] = []
-const terminales: string[] = []
 afterEach(async () => {
-  for (const id of terminales.splice(0)) { try { execFileSync('tmux', ['kill-session', '-t', `ca-${id}`]) } catch { /* ya cerrado */ } }
   for (const s of servidores.splice(0)) { s.closeAllConnections(); await new Promise((r) => s.close(r)) }
+})
+afterAll(async () => {
+  try { execFileSync('tmux', ['-L', SOCKET, 'kill-server']) } catch { /* ya parado */ }
+  await rm(path.join(process.env.TMUX_TMPDIR ?? '/tmp', `tmux-${process.getuid?.() ?? 0}`, SOCKET), { force: true })
 })
 
 async function preparar() {
   const puerto = 20_000 + Math.floor(Math.random() * 20_000)
-  const gestor = crearGestorTerminalesReal()
+  const gestor = crearGestorTerminalesReal(SOCKET)
   const servidor = await arrancarPanel({
     puerto,
     manejador: async () => ({ estado: 404, cabeceras: {}, cuerpo: '' }),
@@ -25,7 +31,6 @@ async function preparar() {
   })
   servidores.push(servidor)
   const info = await gestor.crear({ cwd: '/tmp', argv: ['/bin/sh', '-c', 'cat'], titulo: 'prueba', tipo: 'claude', agenteId: null, proyectoId: null })
-  terminales.push(info.id)
   return { puerto, gestor, id: info.id }
 }
 

@@ -1,6 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { crearGestorTerminales, type PtyMinimo } from '../../src/terminales/gestor.js'
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+import { crearGestorTerminales, entornoTerminal, type PtyMinimo } from '../../src/terminales/gestor.js'
 
 const orden = { cwd: '/tmp', argv: ['/bin/zsh', '-lc', 'exec claude'], titulo: 'Claude · prueba', tipo: 'claude' as const, agenteId: null, proyectoId: 'aaaaaaaaaaaa' }
 
@@ -22,8 +25,59 @@ describe('gestor de terminales', () => {
     expect(info).toMatchObject({ titulo: 'Claude · prueba', tipo: 'claude', proyectoId: 'aaaaaaaaaaaa', agenteId: null, creadoMs: 5 })
     expect(info.id).toMatch(/^[0-9a-f]{12}$/)
     expect(f.llamadas[1]).toEqual(['new-session', '-d', '-s', `ca-${info.id}`, '-c', '/tmp', '-x', '120', '-y', '32', '--', '/bin/zsh', '-lc', 'exec claude'])
-    expect(f.llamadas).toContainEqual(['set-option', '-t', `ca-${info.id}`, 'window-size', 'latest'])
-    expect(f.llamadas).toContainEqual(['set-option', '-t', `ca-${info.id}`, '@ca_titulo', 'Claude · prueba'])
+    // Destino exacto (=): sin él, tmux acepta prefijos y patrones de otras sesiones.
+    expect(f.llamadas).toContainEqual(['set-option', '-t', `=ca-${info.id}:`, 'window-size', 'latest'])
+    expect(f.llamadas).toContainEqual(['set-option', '-t', `=ca-${info.id}:`, '@ca_titulo', 'Claude · prueba'])
+  })
+
+  it('usa su propio servidor de tmux y no expande formatos en la carpeta', async () => {
+    const f = falsos()
+    const gestor = crearGestorTerminales({ tmux: f.tmux, abrirPty: f.abrirPty, socket: 'centro-agentes' })
+    const info = await gestor.crear({ ...orden, cwd: '/Users/p/Web#Shop #{session_name}' })
+    expect(f.llamadas.every((args) => args[0] === '-L' && args[1] === 'centro-agentes')).toBe(true)
+    expect(f.llamadas[1]?.slice(2, 8)).toEqual(['new-session', '-d', '-s', `ca-${info.id}`, '-c', '/Users/p/Web##Shop ##{session_name}'])
+    gestor.adjuntar(info.id, { cols: 80, rows: 24 }, () => {}, () => {})
+    expect(f.abrirPty).toHaveBeenCalledWith(['tmux', '-L', 'centro-agentes', 'attach-session', '-t', `=ca-${info.id}`], expect.anything())
+    await gestor.cerrar(info.id)
+    expect(f.llamadas.at(-1)).toEqual(['-L', 'centro-agentes', 'kill-session', '-t', `=ca-${info.id}`])
+  })
+
+  it('si falla al guardar sus datos, cierra la sesión recién creada', async () => {
+    const f = falsos()
+    const tmux = vi.fn(async (args: string[]) => {
+      f.llamadas.push(args)
+      if (args[0] === 'set-option') throw new Error('tmux falló')
+      return ''
+    })
+    const gestor = crearGestorTerminales({ tmux, abrirPty: f.abrirPty })
+    await expect(gestor.crear(orden)).rejects.toThrow('tmux falló')
+    expect(f.llamadas.at(-1)?.slice(0, 2)).toEqual(['kill-session', '-t'])
+  })
+
+  it('crea de uno en uno: la misma sesión a la vez da un solo terminal y nunca pasa del máximo', async () => {
+    const sesiones = new Map<string, Record<string, string>>()
+    const tmux = vi.fn(async (args: string[]) => {
+      await new Promise((r) => setTimeout(r, 1))
+      if (args[0] === 'list-sessions') {
+        return [...sesiones].map(([n, o]) => [n, '1', o['@ca_titulo'] ?? '', o['@ca_tipo'] ?? '', o['@ca_agente'] ?? '', o['@ca_proyecto'] ?? ''].join('\t')).join('\n')
+      }
+      if (args[0] === 'new-session') sesiones.set(args[3]!, {})
+      if (args[0] === 'set-option') sesiones.get(args[2]!.replace(/^=/, '').replace(/:$/, ''))![args[3]!] = args[4]!
+      return ''
+    })
+    const gestor = crearGestorTerminales({ tmux, abrirPty: falsos().abrirPty })
+    const continuar = { ...orden, agenteId: 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0' }
+    const [a, b] = await Promise.all([gestor.crear(continuar), gestor.crear(continuar)])
+    expect(a.id).toBe(b.id)
+    expect(sesiones.size).toBe(1)
+    const resultados = await Promise.allSettled(Array.from({ length: 7 }, () => gestor.crear(orden)))
+    expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(5)
+    expect(sesiones.size).toBe(6)
+  })
+
+  it('los terminales no heredan las variables de npm ni NODE_OPTIONS del agente', () => {
+    expect(entornoTerminal({ PATH: '/bin', HOME: '/Users/p', NODE_OPTIONS: '--experimental-sqlite', npm_config_cache: '/x', npm_lifecycle_event: 'panel' }))
+      .toEqual({ PATH: '/bin', HOME: '/Users/p', TERM: 'xterm-256color' })
   })
 
   it('no abre más de 6 terminales por máquina', async () => {
@@ -44,7 +98,7 @@ describe('gestor de terminales', () => {
     const recibidos: string[] = []
     const alSalir = vi.fn()
     const enganche = gestor.adjuntar('0123456789ab', { cols: 1_000, rows: 1 }, (d) => recibidos.push(d), alSalir)
-    expect(f.abrirPty).toHaveBeenCalledWith(['tmux', 'attach-session', '-t', 'ca-0123456789ab'], expect.objectContaining({ cols: 400, rows: 5 }))
+    expect(f.abrirPty).toHaveBeenCalledWith(['tmux', 'attach-session', '-t', '=ca-0123456789ab'], expect.objectContaining({ cols: 400, rows: 5 }))
     f.datos[0]!('hola')
     expect(recibidos).toEqual(['hola'])
     enganche.escribir('ls\r')
@@ -67,21 +121,38 @@ describe('gestor de terminales', () => {
 const sinTmux = process.env.CODEX_SANDBOX !== undefined || (() => { try { execFileSync('tmux', ['-V']); return false } catch { return true } })()
 
 describe.skipIf(sinTmux)('gestor de terminales con tmux real', () => {
-  const creados: string[] = []
-  afterEach(() => { for (const id of creados.splice(0)) { try { execFileSync('tmux', ['kill-session', '-t', `ca-${id}`]) } catch { /* ya cerrada */ } } })
+  // Un servidor de tmux solo para estas pruebas: no toca las sesiones de nadie.
+  const socket = `centro-agentes-prueba-${process.pid}`
+  const temporales: string[] = []
+  afterAll(async () => {
+    try { execFileSync('tmux', ['-L', socket, 'kill-server']) } catch { /* ya parado */ }
+    await rm(path.join(process.env.TMUX_TMPDIR ?? '/tmp', `tmux-${process.getuid?.() ?? 0}`, socket), { force: true })
+    await Promise.all(temporales.map((d) => rm(d, { recursive: true, force: true })))
+  })
 
   it('crea, se engancha, recibe la salida y cierra', async () => {
     const { crearGestorTerminalesReal } = await import('../../src/terminales/gestor.js')
-    const gestor = crearGestorTerminalesReal()
+    const gestor = crearGestorTerminalesReal(socket)
     const info = await gestor.crear({ ...orden, argv: ['/bin/sh', '-c', 'echo hola-terminal; sleep 5'] })
-    creados.push(info.id)
     let salida = ''
     const enganche = gestor.adjuntar(info.id, { cols: 80, rows: 24 }, (d) => { salida += d }, () => {})
     await new Promise((r) => setTimeout(r, 1_000))
     expect(salida).toContain('hola-terminal')
-    expect((await gestor.listar()).map((t) => t.id)).toContain(info.id)
+    expect((await gestor.listar()).find((t) => t.id === info.id)?.titulo).toBe('Claude · prueba')
     enganche.soltar()
     await gestor.cerrar(info.id)
     expect((await gestor.listar()).map((t) => t.id)).not.toContain(info.id)
+  })
+
+  it('arranca en la carpeta exacta aunque su nombre lleve # o formatos de tmux', async () => {
+    const { crearGestorTerminalesReal } = await import('../../src/terminales/gestor.js')
+    const carpeta = await mkdtemp(path.join(tmpdir(), 'web#{session_name}#S-'))
+    const fuera = await mkdtemp(path.join(tmpdir(), 'centro-pwd-'))
+    temporales.push(carpeta, fuera)
+    const gestor = crearGestorTerminalesReal(socket)
+    const info = await gestor.crear({ ...orden, cwd: carpeta, argv: ['/bin/sh', '-c', `pwd -P > ${fuera}/pwd.txt; sleep 5`] })
+    await new Promise((r) => setTimeout(r, 800))
+    expect((await readFile(path.join(fuera, 'pwd.txt'), 'utf8')).trim()).toBe(await realpath(carpeta))
+    await gestor.cerrar(info.id)
   })
 })

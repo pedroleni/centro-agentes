@@ -7,9 +7,10 @@ import type { TerminalInfo } from '@centro/compartido'
 import type { OrdenTerminal } from './ordenes.js'
 
 // Terminales del panel: cada uno es una sesión de tmux `ca-<12 hex>` creada con una
-// orden cerrada (ver ordenes.ts). Sus datos viven como opciones de la propia sesión
-// de tmux, así sobreviven a un reinicio del agente. Para verlo, el agente se
-// engancha con un pty (`tmux attach-session`) y reenvía los bytes.
+// orden cerrada (ver ordenes.ts), en un servidor de tmux propio (`-L`). Sus datos
+// viven como opciones de la propia sesión de tmux, así sobreviven a un reinicio
+// del agente. Para verlo, el agente se engancha con un pty (`tmux
+// attach-session`) y reenvía los bytes.
 
 export type PtyMinimo = {
   write(datos: string): void
@@ -40,6 +41,22 @@ function sesion(id: string): string {
   return `ca-${id}`
 }
 
+// Destino exacto: sin el `=`, tmux también acepta prefijos y patrones.
+function destino(id: string): string {
+  return `=${sesion(id)}`
+}
+
+// Entorno de tmux y de lo que corre dentro: el del agente sin lo que pone npm
+// al arrancarlo (NODE_OPTIONS y npm_*), que no pinta nada en una sesión de Claude.
+export function entornoTerminal(entorno: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const limpio: NodeJS.ProcessEnv = {}
+  for (const [clave, valor] of Object.entries(entorno)) {
+    if (clave === 'NODE_OPTIONS' || clave.startsWith('npm_')) continue
+    limpio[clave] = valor
+  }
+  return { ...limpio, TERM: 'xterm-256color' }
+}
+
 function limpio(texto: string): string {
   return texto.replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, 200)
 }
@@ -49,13 +66,19 @@ export function crearGestorTerminales(dep: {
   abrirPty: AbrirPty
   ahora?: () => number
   maximo?: number
+  socket?: string
 }) {
   const ahora = dep.ahora ?? Date.now
   const maximo = dep.maximo ?? 6
+  const servidor = dep.socket === undefined ? [] : ['-L', dep.socket]
+  const tmux = (args: string[]): Promise<string> => dep.tmux([...servidor, ...args])
+  // Las creaciones van de una en una: así el máximo y "una sesión, un terminal"
+  // no se saltan con dos peticiones a la vez.
+  let cola: Promise<unknown> = Promise.resolve()
 
   async function listar(): Promise<TerminalInfo[]> {
     // Sin servidor de tmux (ningún terminal abierto), list-sessions falla: lista vacía.
-    const salida = await dep.tmux(['list-sessions', '-F', FORMATO]).catch(() => '')
+    const salida = await tmux(['list-sessions', '-F', FORMATO]).catch(() => '')
     const terminales: TerminalInfo[] = []
     for (const linea of salida.split('\n')) {
       const [nombre = '', creado = '0', titulo = '', tipo = '', agente = '', proyecto = ''] = linea.split('\t')
@@ -76,28 +99,10 @@ export function crearGestorTerminales(dep: {
   return {
     listar,
 
-    async crear(orden: OrdenTerminal): Promise<TerminalInfo> {
-      if ((await listar()).length >= maximo) throw new Error(`Ya hay ${maximo} terminales abiertos en esta máquina`)
-      const id = randomBytes(6).toString('hex')
-      const nombre = sesion(id)
-      await dep.tmux(['new-session', '-d', '-s', nombre, '-c', orden.cwd, '-x', '120', '-y', '32', '--', ...orden.argv])
-      const opciones: [string, string][] = [
-        ['window-size', 'latest'],
-        ['status', 'off'],
-        ['@ca_titulo', limpio(orden.titulo)],
-        ['@ca_tipo', orden.tipo],
-        ['@ca_agente', orden.agenteId ?? ''],
-        ['@ca_proyecto', orden.proyectoId ?? ''],
-      ]
-      for (const [clave, valor] of opciones) await dep.tmux(['set-option', '-t', nombre, clave, valor])
-      return {
-        id,
-        titulo: limpio(orden.titulo),
-        tipo: orden.tipo,
-        agenteId: orden.agenteId,
-        proyectoId: orden.proyectoId,
-        creadoMs: ahora(),
-      }
+    crear(orden: OrdenTerminal): Promise<TerminalInfo> {
+      const resultado = cola.then(() => crearUno(orden))
+      cola = resultado.catch(() => undefined)
+      return resultado
     },
 
     adjuntar(
@@ -106,11 +111,10 @@ export function crearGestorTerminales(dep: {
       alDatos: (datos: string) => void,
       alSalir: () => void,
     ): Enganche {
-      const nombre = sesion(id)
-      const pty = dep.abrirPty(['tmux', 'attach-session', '-t', nombre], {
+      const pty = dep.abrirPty(['tmux', ...servidor, 'attach-session', '-t', destino(id)], {
         cols: acotar(tamano.cols, 20, 400),
         rows: acotar(tamano.rows, 5, 120),
-        env: { ...process.env, TERM: 'xterm-256color' },
+        env: entornoTerminal(process.env),
       })
       pty.onData(alDatos)
       pty.onExit(() => alSalir())
@@ -122,8 +126,43 @@ export function crearGestorTerminales(dep: {
     },
 
     async cerrar(id: string): Promise<void> {
-      await dep.tmux(['kill-session', '-t', sesion(id)])
+      await tmux(['kill-session', '-t', destino(id)])
     },
+  }
+
+  async function crearUno(orden: OrdenTerminal): Promise<TerminalInfo> {
+    const abiertos = await listar()
+    // Una sesión que ya tiene terminal no se reanuda dos veces: se vuelve a él.
+    const yaAbierto = orden.agenteId === null ? undefined : abiertos.find((t) => t.agenteId === orden.agenteId)
+    if (yaAbierto !== undefined) return yaAbierto
+    if (abiertos.length >= maximo) throw new Error(`Ya hay ${maximo} terminales abiertos en esta máquina`)
+    const id = randomBytes(6).toString('hex')
+    // tmux expande formatos (#{…}) en la carpeta de -c: `##` es un # literal.
+    await tmux(['new-session', '-d', '-s', sesion(id), '-c', orden.cwd.replaceAll('#', '##'), '-x', '120', '-y', '32', '--', ...orden.argv])
+    const opciones: [string, string][] = [
+      ['window-size', 'latest'],
+      ['status', 'off'],
+      ['@ca_titulo', limpio(orden.titulo)],
+      ['@ca_tipo', orden.tipo],
+      ['@ca_agente', orden.agenteId ?? ''],
+      ['@ca_proyecto', orden.proyectoId ?? ''],
+    ]
+    try {
+      // set-option apunta a un panel: con `:` el destino es la sesión exacta.
+      for (const [clave, valor] of opciones) await tmux(['set-option', '-t', `${destino(id)}:`, clave, valor])
+    } catch (error) {
+      // Sin sus datos sería un terminal huérfano que el panel no sabría enseñar.
+      await tmux(['kill-session', '-t', destino(id)]).catch(() => undefined)
+      throw error
+    }
+    return {
+      id,
+      titulo: limpio(orden.titulo),
+      tipo: orden.tipo,
+      agenteId: orden.agenteId,
+      proyectoId: orden.proyectoId,
+      creadoMs: ahora(),
+    }
   }
 }
 
@@ -131,9 +170,10 @@ export type GestorTerminales = ReturnType<typeof crearGestorTerminales>
 
 const execFileAsync = promisify(execFile)
 
-export function crearGestorTerminalesReal(): GestorTerminales {
+export function crearGestorTerminalesReal(socket = 'centro-agentes'): GestorTerminales {
   return crearGestorTerminales({
-    tmux: async (args) => (await execFileAsync('tmux', args, { timeout: 5_000, encoding: 'utf8' })).stdout,
+    socket,
+    tmux: async (args) => (await execFileAsync('tmux', args, { timeout: 5_000, encoding: 'utf8', env: entornoTerminal(process.env) })).stdout,
     abrirPty: (argv, opciones) => {
       // node-pty es nativo: se carga solo cuando hace falta un terminal.
       const pty = createRequire(import.meta.url)('node-pty') as typeof import('node-pty')

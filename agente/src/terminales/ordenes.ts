@@ -5,8 +5,9 @@ import type { Agente, Proyecto } from '@centro/compartido'
 // solo manda ids; aquí se montan las órdenes, con ids validados por expresión
 // regular antes de entrar en la cadena del shell, y nunca hay otra orden posible.
 
-const ID_SESION_CLAUDE = /^[0-9a-f-]{36}$/
-const ID_HILO_CODEX = /^[0-9a-z-]{8,64}$/
+const ID_SESION_CLAUDE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+// Nunca empieza por guion: si no, el id se leería como una opción de codex.
+const ID_HILO_CODEX = /^[0-9a-z][0-9a-z-]{7,63}$/
 
 export type PeticionTerminal =
   | { accion: 'continuar'; agente: Agente }

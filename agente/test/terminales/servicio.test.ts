@@ -37,4 +37,12 @@ describe('crearTerminalPedido', () => {
     expect(await crearTerminalPedido({ accion: 'nueva', tipo: 'claude', proyectoId: 'aaaaaaaaaaaa' }, instantanea, gestor(crear)))
       .toEqual({ ok: false, estado: 429, error: 'Ya hay 6 terminales abiertos en esta máquina' })
   })
+
+  it('si la sesión ya tiene un terminal del panel, devuelve ese terminal en vez de abrir otro', async () => {
+    const crear = vi.fn(async () => info)
+    const abierta = { ...(instantanea as { agentes: unknown[] }), terminales: [{ ...info, agenteId: 'claude:11111111-2222-3333-4444-555555555555' }] } as never
+    expect(await crearTerminalPedido({ accion: 'continuar', agenteId: 'claude:11111111-2222-3333-4444-555555555555' }, abierta, gestor(crear)))
+      .toEqual({ ok: true, terminal: { ...info, agenteId: 'claude:11111111-2222-3333-4444-555555555555' } })
+    expect(crear).not.toHaveBeenCalled()
+  })
 })

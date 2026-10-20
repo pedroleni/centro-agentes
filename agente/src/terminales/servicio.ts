@@ -16,11 +16,15 @@ export type ResultadoTerminal =
 
 export async function crearTerminalPedido(
   pedido: PedidoTerminal,
-  instantanea: Pick<Instantanea, 'agentes' | 'proyectos'>,
+  instantanea: Pick<Instantanea, 'agentes' | 'proyectos' | 'terminales'>,
   gestor: Pick<GestorTerminales, 'crear'>,
 ): Promise<ResultadoTerminal> {
   let orden
   if (pedido.accion === 'continuar') {
+    // Si ya la continúa un terminal del panel, se vuelve a él (el gestor lo
+    // comprueba también contra tmux, por si la instantánea va unos segundos tarde).
+    const abierto = instantanea.terminales?.find((terminal) => terminal.agenteId === pedido.agenteId)
+    if (abierto !== undefined) return { ok: true, terminal: abierto }
     const agente = instantanea.agentes.find((candidato) => candidato.id === pedido.agenteId)
     if (agente === undefined) return { ok: false, estado: 404, error: 'Sesión no encontrada en esta máquina' }
     orden = ordenTerminal({ accion: 'continuar', agente })

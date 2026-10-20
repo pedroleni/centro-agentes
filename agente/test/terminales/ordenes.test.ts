@@ -44,7 +44,7 @@ describe('ordenTerminal', () => {
   })
 
   it('rechaza ids con caracteres de shell, subagentes y tareas sin hilo', () => {
-    for (const id of ['claude:abc; rm -rf ~', 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0 && ls', 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0:agente', 'codex:$(whoami)', 'codex-tarea:0123456789abcdef']) {
+    for (const id of ['codex:--full-auto', 'codex:--dangerously-bypass-approvals-and-sandbox', 'claude:------------------------------------', 'claude:abc; rm -rf ~', 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0 && ls', 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0:agente', 'codex:$(whoami)', 'codex-tarea:0123456789abcdef']) {
       expect(ordenTerminal({ accion: 'continuar', agente: { ...claude, id, tipo: id.startsWith('claude') ? 'claude' : 'codex' } as Agente })).toHaveProperty('error')
     }
   })
