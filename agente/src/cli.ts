@@ -12,6 +12,8 @@ import { commitsRecientes } from './lectores/git.js'
 import { crearRegistroFuentes, leerLinea } from './linea.js'
 import { crearCacheInstantanea } from './panel/cache.js'
 import { crearObtenerLinea } from './panel/obtenerLinea.js'
+import { darDeAlta, leerConfigConexion, rutaConfigConexion } from './alta.js'
+import { crearConexionHub, urlWebSocket, type SocketMinimo } from './conexionHub.js'
 import { crearManejador } from './panel/manejador.js'
 import { arrancarPanel } from './panel/servidor.js'
 import { rutasBase } from './rutas/base.js'
@@ -62,6 +64,14 @@ async function ejecutar(cmd: string, args: string[]): Promise<string> {
   return stdout
 }
 
+function valorOpcion(opciones: string[], nombre: string): string | null {
+  const indice = opciones.indexOf(nombre)
+  if (indice === -1) return null
+  const valor = opciones[indice + 1]
+  if (valor === undefined || valor.startsWith('--')) throw new Error(`Falta el valor de ${nombre}`)
+  return valor
+}
+
 export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   const home = os.homedir()
   const so = sistemaOperativo(process.platform)
@@ -83,26 +93,15 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
     return
   }
 
-  if (argumentos[0] === 'panel') {
-    const puerto = puertoPanel(opciones)
+  // Datos que comparten el panel local y la conexión con el hub: la instantánea en
+  // caché, los commits de un proyecto y la línea de tiempo de un agente.
+  const crearDatos = () => {
     const registroFuentes = crearRegistroFuentes()
-    const construirRegistrada = () => registroFuentes.construir((registrarFuente) =>
-      construirInstantanea({
-        cfg,
-        rutas,
-        so,
-        ahoraMs: Date.now(),
-        pidVivo,
-        ejecutar,
-        registrarFuente,
-      }))
-    const cache = crearCacheInstantanea(construirRegistrada)
-    const raizRepo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-    const dirWeb = path.join(raizRepo, 'web', 'dist')
-    const manejador = crearManejador({
-      puerto,
-      obtenerInstantanea: cache.obtener,
-      obtenerCommits: async (id) => {
+    const cache = crearCacheInstantanea(() => registroFuentes.construir((registrarFuente) =>
+      construirInstantanea({ cfg, rutas, so, ahoraMs: Date.now(), pidVivo, ejecutar, registrarFuente })))
+    return {
+      cache,
+      obtenerCommits: async (id: string) => {
         const instantanea = await cache.obtener()
         const proyecto = instantanea.proyectos.find((item) => item.id === id)
         if (proyecto === undefined) return null
@@ -114,6 +113,19 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
         obtenerFuente: (id) => registroFuentes.obtener(id),
         leer: leerLinea,
       }),
+    }
+  }
+
+  if (argumentos[0] === 'panel') {
+    const puerto = puertoPanel(opciones)
+    const { cache, obtenerCommits, obtenerLinea } = crearDatos()
+    const raizRepo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+    const dirWeb = path.join(raizRepo, 'web', 'dist')
+    const manejador = crearManejador({
+      puerto,
+      obtenerInstantanea: cache.obtener,
+      obtenerCommits,
+      obtenerLinea,
       leerEstatico: async (ruta) => {
         try {
           return await readFile(ruta)
@@ -131,8 +143,39 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
     return
   }
 
+  if (argumentos[0] === 'alta') {
+    const hub = valorOpcion(opciones, '--hub')
+    const codigo = valorOpcion(opciones, '--codigo')
+    if (hub === null || codigo === null) throw new Error('Uso: cli.ts alta --hub <https://mac-mini…> --codigo <CODIGO> [--nombre <nombre>]')
+    const nombre = valorOpcion(opciones, '--nombre') ?? cfg.nombreMaquina
+    const rutaConexion = valorOpcion(opciones, '--conexion') ?? rutaConfigConexion()
+    const { maquinaId } = await darDeAlta({ hub, codigo, nombre, so, fetch, rutaConfig: rutaConexion })
+    process.stdout.write(`Máquina "${nombre}" dada de alta (${maquinaId}). Token guardado en ${rutaConexion}\nAhora: npm run agente:conectar\n`)
+    return
+  }
+
+  if (argumentos[0] === 'conectar') {
+    const conexion = await leerConfigConexion(valorOpcion(opciones, '--conexion') ?? rutaConfigConexion())
+    const { cache, obtenerCommits, obtenerLinea } = crearDatos()
+    void cache.obtener().catch(() => undefined)
+    const url = urlWebSocket(conexion.hub)
+    crearConexionHub({
+      url,
+      token: conexion.token,
+      maquinaId: conexion.maquinaId,
+      nombre: conexion.nombre,
+      obtenerInstantanea: cache.obtener,
+      obtenerCommits,
+      obtenerLinea,
+      crearSocket: (destino, token) =>
+        new WebSocket(destino, { headers: { Authorization: `Bearer ${token}` } } as never) as unknown as SocketMinimo,
+    }).arrancar()
+    process.stdout.write(`Conectando "${conexion.nombre}" con ${conexion.hub}…\n`)
+    return
+  }
+
   throw new Error(
-    'Uso: cli.ts instantanea [--config <ruta>] | panel [--puerto N] [--config <ruta>]',
+    'Uso: cli.ts instantanea | panel [--puerto N] | alta --hub <url> --codigo <c> [--nombre <n>] | conectar   (todas admiten --config <ruta>)',
   )
 }
 

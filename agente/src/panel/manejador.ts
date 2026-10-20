@@ -28,9 +28,31 @@ type DependenciasManejador = {
 
 async function manejarApi(
   dep: DependenciasManejador,
-  ruta: string,
+  rutaPedida: string,
   url: string,
 ): Promise<Respuesta> {
+  // Misma API que el hub (`/api/maquinas…`) para que el front sea uno solo. En modo
+  // local hay una única máquina y sus rutas delegan en las de siempre.
+  let ruta = rutaPedida
+  if (ruta === '/api/maquinas') {
+    try {
+      const instantanea = await dep.obtenerInstantanea()
+      const { id, nombre, so } = instantanea.maquina
+      return json(200, {
+        modo: 'local',
+        maquinas: [{ id, nombre, so, conectada: true, ultimoLatidoMs: instantanea.generadaMs, instantanea }],
+      })
+    } catch (error) {
+      return json(500, { error: mensajeError(error) })
+    }
+  }
+  const deMaquina = /^\/api\/maquinas\/([^/]+)(\/.+)$/.exec(ruta)
+  if (deMaquina) {
+    const instantanea = await dep.obtenerInstantanea().catch(() => null)
+    if (instantanea === null || deMaquina[1] !== instantanea.maquina.id) return json(404, { error: 'Máquina no encontrada' })
+    ruta = `/api${deMaquina[2] ?? ''}`
+  }
+
   if (ruta === '/api/instantanea') {
     try {
       return json(200, await dep.obtenerInstantanea())

@@ -263,4 +263,26 @@ describe('crearManejador', () => {
     expect(respuesta.cuerpo).toBe('')
     expect(respuesta.cabeceras).toMatchObject(cabecerasSeguridad)
   })
+  describe('API de máquinas en modo local', () => {
+    it('devuelve una sola máquina, conectada, con su instantánea', async () => {
+      const manejar = crearManejador(dependencias())
+      const r = await manejar(peticion({ url: '/api/maquinas' }))
+      expect(r.estado).toBe(200)
+      expect(JSON.parse(String(r.cuerpo))).toEqual({
+        modo: 'local',
+        maquinas: [{ id: 'maquina', nombre: 'Pruebas', so: 'macos', conectada: true, ultimoLatidoMs: 1, instantanea }],
+      })
+    })
+
+    it('las rutas con id de máquina delegan en las de siempre y otra máquina da 404', async () => {
+      const obtenerCommits = vi.fn(async () => [])
+      const obtenerLinea = vi.fn(async () => ({ eventos: [], antes: null }) as ResultadoLinea)
+      const manejar = crearManejador(dependencias({ obtenerCommits, obtenerLinea }))
+      expect((await manejar(peticion({ url: '/api/maquinas/maquina/proyectos/aaaaaaaaaaaa/commits' }))).estado).toBe(200)
+      expect(obtenerCommits).toHaveBeenCalledWith('aaaaaaaaaaaa')
+      expect((await manejar(peticion({ url: '/api/maquinas/maquina/agentes/claude%3Ax/linea?antes=5' }))).estado).toBe(200)
+      expect(obtenerLinea).toHaveBeenCalledWith('claude:x', 5)
+      expect((await manejar(peticion({ url: '/api/maquinas/otra/proyectos/aaaaaaaaaaaa/commits' }))).estado).toBe(404)
+    })
+  })
 })
