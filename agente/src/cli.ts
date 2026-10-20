@@ -12,6 +12,8 @@ import { commitsRecientes } from './lectores/git.js'
 import { crearRegistroFuentes, leerLinea } from './linea.js'
 import { crearCacheInstantanea } from './panel/cache.js'
 import { crearObtenerLinea } from './panel/obtenerLinea.js'
+import { crearGestorTerminalesReal } from './terminales/gestor.js'
+import { crearTerminalPedido } from './terminales/servicio.js'
 import { darDeAlta, leerConfigConexion, rutaConfigConexion } from './alta.js'
 import { crearConexionHub, urlWebSocket, type SocketMinimo } from './conexionHub.js'
 import { crearManejador } from './panel/manejador.js'
@@ -97,10 +99,12 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   // caché, los commits de un proyecto y la línea de tiempo de un agente.
   const crearDatos = () => {
     const registroFuentes = crearRegistroFuentes()
+    const gestor = crearGestorTerminalesReal()
     const cache = crearCacheInstantanea(() => registroFuentes.construir((registrarFuente) =>
-      construirInstantanea({ cfg, rutas, so, ahoraMs: Date.now(), pidVivo, ejecutar, registrarFuente })))
+      construirInstantanea({ cfg, rutas, so, ahoraMs: Date.now(), pidVivo, ejecutar, registrarFuente, listarTerminales: gestor.listar })))
     return {
       cache,
+      gestor,
       obtenerCommits: async (id: string) => {
         const instantanea = await cache.obtener()
         const proyecto = instantanea.proyectos.find((item) => item.id === id)
@@ -118,7 +122,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
 
   if (argumentos[0] === 'panel') {
     const puerto = puertoPanel(opciones)
-    const { cache, obtenerCommits, obtenerLinea } = crearDatos()
+    const { cache, gestor, obtenerCommits, obtenerLinea } = crearDatos()
     const raizRepo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
     const dirWeb = path.join(raizRepo, 'web', 'dist')
     const manejador = crearManejador({
@@ -126,6 +130,10 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
       obtenerInstantanea: cache.obtener,
       obtenerCommits,
       obtenerLinea,
+      terminales: {
+        crear: async (pedido) => crearTerminalPedido(pedido, await cache.obtener(), gestor),
+        cerrar: (terminalId) => gestor.cerrar(terminalId),
+      },
       leerEstatico: async (ruta) => {
         try {
           return await readFile(ruta)
@@ -138,7 +146,11 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
     // Se empieza a construir la primera instantánea ya, sin esperar a la primera
     // visita: en frío puede tardar varios segundos.
     void cache.obtener().catch(() => undefined)
-    await arrancarPanel({ puerto, manejador })
+    await arrancarPanel({
+      puerto,
+      manejador,
+      terminal: { maquinaId: async () => (await cache.obtener()).maquina.id, adjuntar: gestor.adjuntar },
+    })
     process.stdout.write(`Panel: http://127.0.0.1:${puerto}\n`)
     return
   }

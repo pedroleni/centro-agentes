@@ -11,6 +11,7 @@ import {
   type Proyecto,
   type SO,
 } from '@centro/compartido'
+import type { TerminalInfo } from '@centro/compartido'
 import { asignarProyectos } from './asignacion.js'
 import type { ConfigAgente } from './config.js'
 import { leerSesionesVivas, type SesionViva } from './lectores/claudeSesiones.js'
@@ -57,6 +58,7 @@ export type DependenciasInstantanea = {
     agenteId: string,
     fuente: { tipo: 'claude' | 'codex-rollout' | 'codex-log'; ruta: string },
   ) => void
+  listarTerminales?: () => Promise<TerminalInfo[]>
 }
 
 type ProyectoEnConstruccion = ProyectoBase & {
@@ -632,5 +634,6 @@ export async function construirInstantanea(
     generadaMs: dep.ahoraMs,
     proyectos: proyectos.map((proyecto) => ({ ...proyecto })),
     agentes,
+    terminales: dep.listarTerminales === undefined ? [] : await dep.listarTerminales().catch(() => []),
   })
 }

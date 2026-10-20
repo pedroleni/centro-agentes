@@ -96,3 +96,14 @@ export const RespuestaMaquinas = z.object({
   maquinas: z.array(MaquinaVista),
 })
 export type RespuestaMaquinas = z.infer<typeof RespuestaMaquinas>
+
+// Mensajes del navegador por el WebSocket de un terminal (igual en el panel local
+// y en el hub). La salida del terminal viaja en tramas binarias.
+export const MensajeNavegadorTerminal = z.discriminatedUnion('tipo', [
+  z.object({ tipo: z.literal('entrada'), datos: z.string().max(64 * 1024) }),
+  z.object({ tipo: z.literal('tamano'), cols: COLUMNAS, rows: FILAS }),
+])
+export type MensajeNavegadorTerminal = z.infer<typeof MensajeNavegadorTerminal>
+
+// Códigos de cierre del WebSocket de un terminal hacia el navegador.
+export const CIERRE_TERMINAL = { terminada: 4000, noEncontrado: 4004, maquinaDesconectada: 4502 } as const
