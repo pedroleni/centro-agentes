@@ -9,14 +9,13 @@ export function enlazarCommits(
   proyectoId: string,
 ): Map<string, Commit[]> {
   const enlaces = new Map<string, Commit[]>()
-  const candidatos = agentes.filter((agente) => agente.proyectoIds.includes(proyectoId))
 
   for (const commit of commits) {
     let agenteElegido: Agente | null = null
     let distanciaElegida = Number.POSITIVE_INFINITY
 
-    for (const agente of candidatos) {
-      for (const marcaMs of agente.commitsMs) {
+    for (const agente of agentes) {
+      for (const marcaMs of agente.commitsPorProyecto[proyectoId] ?? []) {
         if (
           marcaMs < commit.fechaMs - ANTES_COMMIT_MS ||
           marcaMs > commit.fechaMs + DESPUES_COMMIT_MS

@@ -31,7 +31,7 @@ function crearAgente(contexto: Agente['contexto'], cambios: Partial<Agente> = {}
     entrada: null,
     puedeContinuar: false,
     tareas: [],
-    commitsMs: [],
+    commitsPorProyecto: {},
     ...cambios,
   }
 }

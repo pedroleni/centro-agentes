@@ -86,7 +86,7 @@ export const Agente = z.object({
   entrada: z.string().nullable(),
   puedeContinuar: z.boolean(),
   tareas: z.array(TareaSesion),
-  commitsMs: z.array(z.number()),
+  commitsPorProyecto: z.record(z.string(), z.array(z.number())),
 })
 export type Agente = z.infer<typeof Agente>
 

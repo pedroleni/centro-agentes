@@ -38,8 +38,8 @@ import { enmascararSecretos } from './util/enmascarar.js'
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1_000
 const UN_DIA_MS = 24 * 60 * 60 * 1_000
 const ACTIVIDAD_RECIENTE_MS = 30_000
-const lectorClaude = crearLectorClaude()
 const lectorRollouts = crearLectorRollouts()
+const lectoresClaude = new Map<string, ReturnType<typeof crearLectorClaude>>()
 
 type Ejecutar = (cmd: string, args: string[]) => Promise<string>
 
@@ -93,6 +93,40 @@ function enmascararNullable(texto: string | null): string | null {
 
 function idMaquina(nombre: string): string {
   return createHash('sha1').update(nombre).digest('hex').slice(0, 12)
+}
+
+function lectorClaudePara(home: string): ReturnType<typeof crearLectorClaude> {
+  const existente = lectoresClaude.get(home)
+  if (existente !== undefined) return existente
+  const lector = crearLectorClaude(home)
+  lectoresClaude.set(home, lector)
+  return lector
+}
+
+function contieneDirectorio(base: string, dir: string, so: SO): boolean {
+  const rutas = so === 'windows' ? path.win32 : path
+  const baseNormalizada = so === 'windows' ? base.toLocaleLowerCase() : base
+  const dirNormalizado = so === 'windows' ? dir.toLocaleLowerCase() : dir
+  const relativa = rutas.relative(baseNormalizada, dirNormalizado)
+  return relativa === '' || (!relativa.startsWith('..') && !rutas.isAbsolute(relativa))
+}
+
+function agruparCommitsPorProyecto(
+  commits: ResumenClaude['commits'],
+  proyectos: ProyectoBase[],
+  so: SO,
+): Record<string, number[]> {
+  const resultado: Record<string, number[]> = {}
+  for (const commit of commits) {
+    const proyecto = proyectos
+      .filter((candidato) => contieneDirectorio(candidato.ruta, commit.dir, so))
+      .sort((a, b) => b.ruta.length - a.ruta.length)[0]
+    if (proyecto === undefined) continue
+    const fechas = resultado[proyecto.id] ?? []
+    fechas.push(commit.fechaMs)
+    resultado[proyecto.id] = fechas
+  }
+  return resultado
 }
 
 async function construirProyectos(
@@ -149,6 +183,7 @@ function agenteClaude(
   sesion: SesionViva | undefined,
   proyectos: ProyectoBase[],
   cfg: ConfigAgente,
+  so: SO,
 ): Agente {
   const viva = sesion?.vivo === true ? sesion : undefined
   const estado: EstadoAgente =
@@ -193,7 +228,7 @@ function agenteClaude(
       ...tarea,
       texto: enmascararSecretos(tarea.texto),
     })),
-    commitsMs: resumen.commitsMs,
+    commitsPorProyecto: agruparCommitsPorProyecto(resumen.commits, proyectos, so),
   }
 }
 
@@ -220,7 +255,7 @@ function agenteClaudeSinTranscript(sesion: SesionViva, proyectos: ProyectoBase[]
     entrada: sesion.entrada,
     puedeContinuar: false,
     tareas: [],
-    commitsMs: [],
+    commitsPorProyecto: {},
   }
 }
 
@@ -257,6 +292,7 @@ async function construirAgentesClaude(
     dep.ahoraMs - SIETE_DIAS_MS,
     sesionesVivas,
   )
+  const lectorClaude = lectorClaudePara(dep.rutas.home)
   const agentes = new Map<string, Agente>()
   for (const encontrado of encontrados) {
     const ruta = await rutaPermitida(guardian, encontrado.ruta)
@@ -264,7 +300,7 @@ async function construirAgentesClaude(
     try {
       const resumen = await lectorClaude.resumen(ruta)
       const sesion = resumen.agenteSubId === null ? porId.get(resumen.sessionId) : undefined
-      const agente = agenteClaude(resumen, encontrado, sesion, proyectos, dep.cfg)
+      const agente = agenteClaude(resumen, encontrado, sesion, proyectos, dep.cfg, dep.so)
       agentes.set(agente.id, agente)
     } catch {
       // El transcript puede cambiar o desaparecer mientras se construye la instantánea.
@@ -362,7 +398,7 @@ function agenteDeHilo(
     entrada: hilo.source,
     puedeContinuar: esTarea ? estado !== 'en-curso' : estado === 'cerrada',
     tareas: [],
-    commitsMs: [],
+    commitsPorProyecto: {},
   }
 }
 
@@ -393,7 +429,7 @@ function agenteDeTareaSinHilo(
     entrada: 'exec',
     puedeContinuar: estado !== 'en-curso',
     tareas: [],
-    commitsMs: [],
+    commitsPorProyecto: {},
   }
 }
 

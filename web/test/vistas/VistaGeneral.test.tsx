@@ -55,7 +55,7 @@ function crearAgente(cambios: Partial<Agente> = {}): Agente {
     entrada: null,
     puedeContinuar: true,
     tareas: [],
-    commitsMs: [],
+    commitsPorProyecto: {},
     ...cambios,
   }
 }

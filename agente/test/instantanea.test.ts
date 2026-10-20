@@ -197,4 +197,35 @@ describe('construirInstantanea', () => {
     expect(agente?.tareas).toEqual([{ texto: 'API_KEY=«oculto»', estado: 'pendiente' }])
     expect(JSON.stringify(agente)).not.toContain('abc123secret')
   })
+
+  it('asigna cada marca de commit al repo indicado aunque la sesión pertenezca a otro', async () => {
+    const hogar = await preparar()
+    const transcript = path.join(
+      hogar.rutas.claude,
+      'projects',
+      '-home-Desktop-Proyectos-IA',
+      'viva-a.jsonl',
+    )
+    await appendFile(
+      transcript,
+      `${JSON.stringify({
+        type: 'assistant',
+        cwd: hogar.proyectoA,
+        message: {
+          content: [{
+            type: 'tool_use',
+            name: 'Bash',
+            input: { command: `git -C "${hogar.proyectoB}" commit -m x` },
+          }],
+        },
+        timestamp: new Date(hogar.ahoraMs).toISOString(),
+      })}\n`,
+    )
+
+    const instantanea = await construir(hogar)
+    const agente = instantanea.agentes.find((item) => item.id === 'claude:viva-a')
+
+    expect(agente?.proyectoIds).toEqual([hogar.idA])
+    expect(agente?.commitsPorProyecto).toEqual({ [hogar.idB]: [hogar.ahoraMs] })
+  })
 })

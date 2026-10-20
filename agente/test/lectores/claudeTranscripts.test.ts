@@ -24,6 +24,52 @@ afterEach(async () => {
 })
 
 describe('crearLectorClaude', () => {
+  it('atribuye git commit al último cd del mismo comando, incluidas rutas con espacios', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'sesion-cd.jsonl')
+    const fecha = '2026-10-19T09:00:00.000Z'
+    await writeFile(ruta, jsonl([{
+      type: 'assistant',
+      cwd: '/r/a',
+      timestamp: fecha,
+      message: {
+        content: [{
+          type: 'tool_use',
+          name: 'Bash',
+          input: { command: 'cd "/r/Proyectos IA/b" && git add . && git commit -m x' },
+        }],
+      },
+    }]))
+
+    const resumen = await crearLectorClaude('/r').resumen(ruta)
+
+    expect(resumen.commits).toEqual([
+      { fechaMs: Date.parse(fecha), dir: '/r/Proyectos IA/b' },
+    ])
+  })
+
+  it('da prioridad a la carpeta indicada con git -C', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'sesion-c.jsonl')
+    const fecha = '2026-10-19T09:00:00.000Z'
+    await writeFile(ruta, jsonl([{
+      type: 'assistant',
+      cwd: '/r/a',
+      timestamp: fecha,
+      message: {
+        content: [{
+          type: 'tool_use',
+          name: 'Bash',
+          input: { command: 'git -C /r/b commit -m x' },
+        }],
+      },
+    }]))
+
+    const resumen = await crearLectorClaude('/r').resumen(ruta)
+
+    expect(resumen.commits).toEqual([{ fechaMs: Date.parse(fecha), dir: '/r/b' }])
+  })
+
   it('resume los tipos reales del transcript y conserva los ultimos valores', async () => {
     const directorio = await crearDirectorioTemporal()
     const ruta = path.join(directorio, 'sesion-1.jsonl')
@@ -122,7 +168,10 @@ describe('crearLectorClaude', () => {
         { texto: 'Terminada', estado: 'hecha' },
       ],
       ficherosEditados: ['/repo/a.ts', '/repo/b.ts'],
-      commitsMs: [Date.parse('2026-10-19T09:00:00.000Z')],
+      commits: [{
+        fechaMs: Date.parse('2026-10-19T09:00:00.000Z'),
+        dir: '/Proyectos IA/Año ñ',
+      }],
     })
   })
 

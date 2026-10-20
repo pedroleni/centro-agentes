@@ -1,4 +1,7 @@
+/// <reference types="node" />
 // @vitest-environment jsdom
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import type { Agente, Commit, Proyecto } from '@centro/compartido'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -65,7 +68,7 @@ const agente: Agente = {
   entrada: null,
   puedeContinuar: true,
   tareas: [],
-  commitsMs: [FECHA_COMMIT_ENLAZADO - 5_000],
+  commitsPorProyecto: { [proyecto.id]: [FECHA_COMMIT_ENLAZADO - 5_000] },
 }
 
 const commits: Commit[] = [
@@ -139,5 +142,22 @@ describe('FichaProyecto', () => {
     render(<FichaProyecto proyecto={null} agentes={[]} commits={[]} ahora={AHORA} />)
     expect(screen.getByText('Proyecto no encontrado')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Volver' }).getAttribute('href')).toBe('#/')
+  })
+
+  it('renderiza un título de 300 caracteres sin espacios con corte seguro', async () => {
+    const tituloLargo = 'a'.repeat(300)
+    render(
+      <FichaProyecto
+        proyecto={{ ...proyecto, nombre: tituloLargo }}
+        agentes={[]}
+        commits={[]}
+        ahora={AHORA}
+      />,
+    )
+
+    const titulo = screen.getByRole('heading', { name: tituloLargo })
+    expect(titulo).toBeTruthy()
+    const estilos = await readFile(path.join(process.cwd(), 'web', 'src', 'estilos.css'), 'utf8')
+    expect(estilos).toMatch(/\.cd-title h1\s*\{[^}]*min-width:0;[^}]*overflow-wrap:anywhere;/)
   })
 })

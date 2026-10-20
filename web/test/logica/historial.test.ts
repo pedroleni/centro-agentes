@@ -8,7 +8,7 @@ function crearAgente(cambios: Partial<Agente> = {}): Agente {
     proyectoIds: ['proyecto-1'], estado: 'cerrada', modelo: null, esfuerzo: null,
     contexto: null, tokensTotales: null, ultimoPrompt: null, rama: 'main', pr: null,
     inicioMs: null, ultimaActividadMs: 0, padreId: null, entrada: null,
-    puedeContinuar: true, tareas: [], commitsMs: [], ...cambios,
+    puedeContinuar: true, tareas: [], commitsPorProyecto: {}, ...cambios,
   }
 }
 
@@ -23,7 +23,7 @@ describe('historialPorDia', () => {
     const suelto = crearCommit('suelto', ahora - 120_000)
     const agente = crearAgente({
       ultimaActividadMs: ahora - 30_000,
-      commitsMs: [enlazado.fechaMs - 5_000],
+      commitsPorProyecto: { 'proyecto-1': [enlazado.fechaMs - 5_000] },
     })
 
     const dias = historialPorDia([enlazado, suelto], [agente], 'proyecto-1', ahora)
@@ -61,11 +61,13 @@ describe('historialPorDia', () => {
     const commitDiaDMenos3 = crearCommit('d-menos-3', new Date(2026, 8, 7, 11).getTime())
     const agente = crearAgente({
       ultimaActividadMs: ahora - 30_000,
-      commitsMs: [
-        commitDiaDTemprano.fechaMs,
-        commitDiaDUltimo.fechaMs,
-        commitDiaDMenos3.fechaMs,
-      ],
+      commitsPorProyecto: {
+        'proyecto-1': [
+          commitDiaDTemprano.fechaMs,
+          commitDiaDUltimo.fechaMs,
+          commitDiaDMenos3.fechaMs,
+        ],
+      },
     })
 
     const dias = historialPorDia(

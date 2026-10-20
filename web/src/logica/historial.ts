@@ -48,7 +48,10 @@ export function historialPorDia(
   proyectoId: string,
   ahora: number,
 ): Dia[] {
-  const agentesDelProyecto = agentes.filter((agente) => agente.proyectoIds.includes(proyectoId))
+  const agentesDelProyecto = agentes.filter(
+    (agente) => agente.proyectoIds.includes(proyectoId)
+      || (agente.commitsPorProyecto[proyectoId]?.length ?? 0) > 0,
+  )
   const enlaces = enlazarCommits(commits, agentesDelProyecto, proyectoId)
   const commitsEnlazados = new Set(
     [...enlaces.values()].flat().map((commit) => commit.hash),

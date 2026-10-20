@@ -9,7 +9,7 @@ function crearAgente(cambios: Partial<Agente> = {}): Agente {
     proyectoIds: ['proyecto-1'], estado: 'cerrada', modelo: null, esfuerzo: null,
     contexto: null, tokensTotales: null, ultimoPrompt: null, rama: null, pr: null,
     inicioMs: null, ultimaActividadMs: 0, padreId: null, entrada: null,
-    puedeContinuar: true, tareas: [], commitsMs: [], ...cambios,
+    puedeContinuar: true, tareas: [], commitsPorProyecto: {}, ...cambios,
   }
 }
 

@@ -7,10 +7,17 @@ type PropiedadesFichaProyecto = {
   proyecto: Proyecto | null
   agentes: Agente[]
   commits: Commit[]
+  errorCommits?: boolean
   ahora: number
 }
 
-export function FichaProyecto({ proyecto, agentes, commits, ahora }: PropiedadesFichaProyecto) {
+export function FichaProyecto({
+  proyecto,
+  agentes,
+  commits,
+  errorCommits = false,
+  ahora,
+}: PropiedadesFichaProyecto) {
   if (proyecto === null) {
     return (
       <main className="cd-not-found">
@@ -31,6 +38,11 @@ export function FichaProyecto({ proyecto, agentes, commits, ahora }: Propiedades
           <span className="ca-chip">{proyecto.git.cambios} sin commit</span>
         </div>
       </header>
+      {errorCommits && (
+        <div className="ca-error cd-history-error" role="status">
+          No se pudo cargar el historial · reintentando
+        </div>
+      )}
       <div className="cd-main">
         <Historial commits={commits} agentes={agentes} proyectoId={proyecto.id} ahora={ahora} />
         <div className="cd-side">
