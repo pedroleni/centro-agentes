@@ -20,13 +20,19 @@ export function TarjetaProyecto({ tarjeta, ahora }: PropiedadesTarjetaProyecto) 
   const agentesRestantes = agentes.length - agentesVisibles.length
   const maximoActividad = Math.max(...proyecto.git.actividad14d)
   const ultimoCommit = proyecto.git.ultimoCommit
+  const href = `#/proyecto/${proyecto.id}`
 
   return (
-    <article className={`ca-card${tarjeta.activo ? ' live' : ''}`}>
+    <article
+      className={`ca-card ca-card-clickable${tarjeta.activo ? ' live' : ''}`}
+      data-testid={`tarjeta-proyecto-${proyecto.id}`}
+      onClick={() => { window.location.hash = href }}
+    >
+      <a className="ca-card-link" href={href} aria-label={proyecto.nombre} />
       <div className="ca-head">
-        <a className="name mono" href={`#/proyecto/${proyecto.id}`} title={proyecto.nombre}>
+        <span className="name mono" title={proyecto.nombre}>
           {proyecto.nombre}
-        </a>
+        </span>
       </div>
       {tarjeta.ultimoPrompt !== null && (
         <div className="ca-prompt" title={tarjeta.ultimoPrompt}>{tarjeta.ultimoPrompt}</div>

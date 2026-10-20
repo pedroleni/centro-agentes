@@ -85,12 +85,12 @@ export function App() {
       )
     }
   } else {
-    contenido = <VistaGeneral {...instantanea} error={false} ahora={Date.now()} />
+    contenido = <VistaGeneral {...instantanea} ahora={Date.now()} />
   }
 
   return (
     <>
-      {instantanea.error && (
+      {instantanea.error && proyectoId !== null && (
         <div className="ca-error" role="status">
           Sin conexión con el agente · reintentando
         </div>

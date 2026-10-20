@@ -117,14 +117,17 @@ describe('VistaGeneral', () => {
 
   it('avisa del error y conserva visibles los datos', () => {
     pintar(crearInstantanea(), true)
-    expect(screen.getByText('Sin conexión con el agente · reintentando')).toBeTruthy()
+    expect(screen.getByText(/Sin conexión · reintentando/)).toBeTruthy()
     expect(screen.getByRole('link', { name: 'centro-agentes' })).toBeTruthy()
   })
 
   it('enlaza la tarjeta con la ficha del proyecto', () => {
     pintar()
-    expect(screen.getByRole('link', { name: 'centro-agentes' }).getAttribute('href'))
-      .toBe('#/proyecto/centro-agentes')
+    window.location.hash = '#/'
+
+    fireEvent.click(screen.getByTestId('tarjeta-proyecto-centro-agentes'))
+
+    expect(window.location.hash).toBe('#/proyecto/centro-agentes')
   })
 
   it('no muestra acciones de editor ni terminal todavía no disponibles', () => {

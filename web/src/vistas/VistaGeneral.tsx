@@ -2,7 +2,8 @@ import type { Instantanea } from '@centro/compartido'
 import { useMemo, useState } from 'react'
 import { agruparProyectos } from '../logica/agrupar.js'
 import { filtrarGrupos, type FiltroProyectos } from '../logica/filtrar.js'
-import { fechaRelativa } from '../logica/formato.js'
+import { EnDirecto } from './EnDirecto.js'
+import { EnVivo } from './EnVivo.js'
 import { FilaAgente } from './FilaAgente.js'
 import { TarjetaProyecto } from './TarjetaProyecto.js'
 
@@ -53,29 +54,29 @@ export function VistaGeneral({ datos, error, actualizadaMs, ahora }: Propiedades
           />
         </label>
       </header>
-      <nav className="ca-filters" aria-label="Filtros de proyectos">
-        {FILTROS.map((opcion) => (
-          <button
-            key={opcion.id}
-            type="button"
-            className={`ca-chipf${filtro === opcion.id ? ' on' : ''}`}
-            aria-pressed={filtro === opcion.id}
-            onClick={() => establecerFiltro(opcion.id)}
-          >
-            {opcion.etiqueta}
-          </button>
-        ))}
-      </nav>
       <div className="ca-body">
-        {error && <div className="ca-error" role="status">Sin conexión con el agente · reintentando</div>}
         {datos === null || agrupacion === null ? (
           <p className="ca-empty">Cargando…</p>
         ) : (
           <>
             <div className="ca-machine">
               <span>💻 {datos.maquina.nombre}</span>
-              {actualizadaMs !== null && <small>actualizado {fechaRelativa(actualizadaMs, ahora)}</small>}
+              <EnVivo actualizadaMs={actualizadaMs ?? datos.generadaMs} error={error} ahora={ahora} />
             </div>
+            <EnDirecto agentes={datos.agentes} proyectos={datos.proyectos} ahora={ahora} />
+            <nav className="ca-filters" aria-label="Filtros de proyectos">
+              {FILTROS.map((opcion) => (
+                <button
+                  key={opcion.id}
+                  type="button"
+                  className={`ca-chipf${filtro === opcion.id ? ' on' : ''}`}
+                  aria-pressed={filtro === opcion.id}
+                  onClick={() => establecerFiltro(opcion.id)}
+                >
+                  {opcion.etiqueta}
+                </button>
+              ))}
+            </nav>
             {datos.proyectos.length === 0 && datos.agentes.length === 0 && (
               <p className="ca-empty">No hay proyectos en las carpetas escaneadas</p>
             )}
