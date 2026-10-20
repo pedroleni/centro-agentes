@@ -98,6 +98,14 @@ export type PedidoTerminal =
   | { accion: 'continuar'; agenteId: string }
   | { accion: 'nueva'; tipo: 'claude' | 'codex'; proyectoId: string }
 
+// Títulos de los terminales creados desde esta pestaña: la instantánea que los
+// lista puede tardar unos segundos en llegar (el hub la recibe cada 5 s).
+const titulos = new Map<string, string>()
+
+export function tituloReciente(terminalId: string): string | null {
+  return titulos.get(terminalId) ?? null
+}
+
 // Crea un terminal en una máquina y devuelve sus datos. Los errores llevan el
 // mensaje del servidor (p. ej. "Esta sesión sigue abierta en otro sitio").
 export async function crearTerminal(maquinaId: string, pedido: PedidoTerminal): Promise<TerminalInfo> {
@@ -111,7 +119,9 @@ export async function crearTerminal(maquinaId: string, pedido: PedidoTerminal): 
     const cuerpo = (await respuesta.json().catch(() => ({}))) as { error?: string }
     throw new ErrorApi(respuesta.status, cuerpo.error)
   }
-  return TerminalInfo.parse(await respuesta.json())
+  const terminal = TerminalInfo.parse(await respuesta.json())
+  titulos.set(terminal.id, terminal.titulo)
+  return terminal
 }
 
 export async function cerrarTerminal(maquinaId: string, terminalId: string): Promise<void> {

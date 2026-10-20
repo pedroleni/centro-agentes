@@ -1,6 +1,6 @@
 import type { Commit } from '@centro/compartido'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { ErrorApi, obtenerCommitsDe, obtenerLineaDe, type ResultadoLinea } from './api.js'
+import { ErrorApi, obtenerCommitsDe, obtenerLineaDe, tituloReciente, type ResultadoLinea } from './api.js'
 import { fusionarLinea } from './logica/linea.js'
 import { leerRuta, maquinaDeRuta } from './logica/rutas.js'
 import { usarMaquinas } from './usarMaquinas.js'
@@ -150,7 +150,7 @@ export function App() {
             maquinaId={rutaLeida.maquinaId}
             maquinaNombre={maquina?.nombre ?? 'la máquina'}
             terminalId={rutaLeida.terminalId}
-            titulo={terminal?.titulo ?? 'Terminal'}
+            titulo={terminal?.titulo ?? tituloReciente(rutaLeida.terminalId) ?? 'Terminal'}
           />
         </Suspense>
       )

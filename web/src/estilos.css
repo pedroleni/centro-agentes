@@ -340,6 +340,11 @@ button, input { font:inherit; }
 .vt-volver { color:#9db4f5; text-decoration:none; font-size:13px; }
 .vt-titulo { display:flex; align-items:center; gap:8px; min-width:0; flex:1; }
 .vt-titulo strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; color:#fff; }
+@media (max-width: 600px) {
+  /* En el móvil el título va en su propia fila: si no, se queda sin ancho. */
+  .vt-titulo { order:5; flex-basis:100%; }
+  .vt-estado { margin-left:auto; }
+}
 .vt-maquina { font-size:11px; font-weight:700; color:#fff; background:#334155; border-radius:999px; padding:1px 8px; white-space:nowrap; }
 .vt-estado { font-size:12px; color:#9aa3b8; white-space:nowrap; }
 .vt-estado.conectado { color:#5cc98a; }
