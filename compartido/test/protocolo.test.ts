@@ -40,4 +40,28 @@ describe('protocolo', () => {
     expect(r.maquinas).toHaveLength(1)
     expect(LIMITE_MENSAJE_BYTES).toBe(8 * 1024 * 1024)
   })
+  describe('terminales', () => {
+    it('acepta crear (continuar o nueva) y cerrar como peticiones', () => {
+      expect(MensajeHub.parse({ tipo: 'peticion', id: '1', op: 'terminal-crear', accion: 'continuar', agenteId: 'claude:x' })).toBeTruthy()
+      expect(MensajeHub.parse({ tipo: 'peticion', id: '2', op: 'terminal-crear', accion: 'nueva', tipo_agente: 'codex', proyectoId: 'aaaaaaaaaaaa' })).toBeTruthy()
+      expect(MensajeHub.parse({ tipo: 'peticion', id: '3', op: 'terminal-cerrar', terminalId: '0123456789ab' })).toBeTruthy()
+      expect(() => MensajeHub.parse({ tipo: 'peticion', id: '4', op: 'terminal-crear', accion: 'nueva', tipo_agente: 'bash', proyectoId: 'a' })).toThrow()
+      expect(() => MensajeHub.parse({ tipo: 'peticion', id: '5', op: 'terminal-cerrar', terminalId: '../x' })).toThrow()
+    })
+
+    it('acepta los mensajes de canal del hub y acota tamaños y datos', () => {
+      expect(MensajeHub.parse({ tipo: 'terminal-adjuntar', canal: 'c1', terminalId: '0123456789ab', cols: 80, rows: 24 })).toBeTruthy()
+      expect(MensajeHub.parse({ tipo: 'terminal-entrada', canal: 'c1', datos: Buffer.from('ls\r').toString('base64') })).toBeTruthy()
+      expect(MensajeHub.parse({ tipo: 'terminal-tamano', canal: 'c1', cols: 400, rows: 120 })).toBeTruthy()
+      expect(MensajeHub.parse({ tipo: 'terminal-soltar', canal: 'c1' })).toBeTruthy()
+      expect(() => MensajeHub.parse({ tipo: 'terminal-tamano', canal: 'c1', cols: 401, rows: 24 })).toThrow()
+      expect(() => MensajeHub.parse({ tipo: 'terminal-adjuntar', canal: 'c1', terminalId: '0123456789ab', cols: 80, rows: 4 })).toThrow()
+      expect(() => MensajeHub.parse({ tipo: 'terminal-entrada', canal: 'c1', datos: 'A'.repeat(90_000) })).toThrow()
+    })
+
+    it('acepta la salida y el fin de un terminal del agente', () => {
+      expect(MensajeAgente.parse({ tipo: 'terminal-salida', canal: 'c1', datos: 'aG9sYQ==' })).toBeTruthy()
+      expect(MensajeAgente.parse({ tipo: 'terminal-fin', canal: 'c1', motivo: 'La sesión ha terminado' })).toBeTruthy()
+    })
+  })
 })

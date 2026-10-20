@@ -82,9 +82,15 @@ export function crearConexionHub(o: Opciones) {
     }
     if (mensaje.tipo !== 'peticion') return
     try {
-      const datos = mensaje.op === 'commits'
-        ? await o.obtenerCommits(mensaje.proyectoId).then((commits) => (commits === null ? null : { commits }))
-        : await o.obtenerLinea(mensaje.agenteId, mensaje.antes)
+      let datos: unknown
+      if (mensaje.op === 'commits') {
+        datos = await o.obtenerCommits(mensaje.proyectoId).then((commits) => (commits === null ? null : { commits }))
+      } else if (mensaje.op === 'linea') {
+        datos = await o.obtenerLinea(mensaje.agenteId, mensaje.antes)
+      } else {
+        enviar({ tipo: 'respuesta', id: mensaje.id, ok: false, error: 'Los terminales no están disponibles en esta máquina' })
+        return
+      }
       enviar(datos === null
         ? { tipo: 'respuesta', id: mensaje.id, ok: false, error: 'No encontrado' }
         : { tipo: 'respuesta', id: mensaje.id, ok: true, datos })

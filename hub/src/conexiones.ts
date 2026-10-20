@@ -88,7 +88,7 @@ export function crearConexiones(ahora: () => number = Date.now) {
       } else if (mensaje.tipo === 'instantanea') {
         latidos.set(maquinaId, ahora())
         instantaneas.set(maquinaId, mensaje.instantanea)
-      } else {
+      } else if (mensaje.tipo === 'respuesta') {
         const pendiente = pendientes.get(mensaje.id)
         if (pendiente === undefined || pendiente.maquinaId !== maquinaId) return
         clearTimeout(pendiente.temporizador)
