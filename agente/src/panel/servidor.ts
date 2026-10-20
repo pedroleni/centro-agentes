@@ -14,6 +14,7 @@ type OpcionesPanel = {
     maquinaId(): Promise<string>
     adjuntar: GestorTerminales['adjuntar']
     clave: string
+    maximoEnganches?: number
   }
 }
 
@@ -49,7 +50,10 @@ const CABECERAS_ERROR = {
 export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
   const permitidos = new Set([`127.0.0.1:${opciones.puerto}`, `localhost:${opciones.puerto}`])
   const origenes = new Set([...permitidos].map((host) => `http://${host}`))
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024 })
+  // 64 K caracteres de entrada, aunque todos vengan escapados en el JSON.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 })
+  const maximoEnganches = opciones.terminal?.maximoEnganches ?? 16
+  let enganches = 0
 
   const servidor = createServer((peticion, respuesta) => {
     void (async () => {
@@ -107,18 +111,26 @@ export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
         ws.on('error', () => undefined)
         // Sin la clave se cierra con 4401 para que el navegador lo diga y no reintente.
         if (!conClave) return ws.close(CIERRE_TERMINAL.sesionCaducada, 'Falta la clave del panel')
+        // Cada enganche es un pty: con tope, nadie agota los de la máquina. 1013 = reintenta.
+        if (enganches >= maximoEnganches) return ws.close(1013, 'Demasiados terminales abiertos a la vez')
         let enganche: ReturnType<GestorTerminales['adjuntar']>
         try {
           enganche = terminal.adjuntar(
             terminalId,
             { cols, rows },
-            (datos) => { if (ws.readyState === ws.OPEN) ws.send(Buffer.from(datos, 'utf8')) },
+            (datos) => {
+              if (ws.readyState !== ws.OPEN) return
+              // Si el navegador no da abasto, se corta: al reconectar, tmux repinta.
+              if (ws.bufferedAmount > 8 * 1024 * 1024) return ws.close(1013, 'Demasiada salida pendiente')
+              ws.send(Buffer.from(datos, 'utf8'))
+            },
             () => ws.close(CIERRE_TERMINAL.terminada, 'La sesión ha terminado'),
           )
         } catch {
           ws.close(CIERRE_TERMINAL.noEncontrado, 'Terminal no encontrado')
           return
         }
+        enganches += 1
         ws.on('message', (datos, binario) => {
           if (binario) return
           let mensaje: MensajeNavegadorTerminal
@@ -130,7 +142,10 @@ export function arrancarPanel(opciones: OpcionesPanel): Promise<Server> {
           if (mensaje.tipo === 'entrada') enganche.escribir(mensaje.datos)
           else enganche.redimensionar(mensaje.cols, mensaje.rows)
         })
-        ws.on('close', () => enganche.soltar())
+        ws.on('close', () => {
+          enganches -= 1
+          enganche.soltar()
+        })
       })
     })().catch(() => rechazar('500 Internal Server Error'))
   })

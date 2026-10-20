@@ -1,3 +1,4 @@
+import { trocearTexto } from '@centro/compartido'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
@@ -51,7 +52,8 @@ export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: 
       ctrlActivo.current = false
       establecerCtrl(false)
     }
-    enviar({ tipo: 'entrada', datos: texto })
+    // Un pegado grande va en varios mensajes: cada uno admite como mucho 64 K.
+    for (const trozo of trocearTexto(texto)) enviar({ tipo: 'entrada', datos: trozo })
   }
 
   useEffect(() => {

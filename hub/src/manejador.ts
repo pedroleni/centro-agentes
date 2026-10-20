@@ -194,11 +194,18 @@ export function crearManejadorHub(dep: Dependencias) {
       if (!ID_HEX.test(maquinaId)) return json(404, { error: 'No encontrado' })
       const pedido = leerJson(PedidoTerminal, p.cuerpo)
       if (pedido === null) return json(400, { error: 'Petición no válida' })
-      dep.almacen.auditar('terminal-crear', { maquinaId, ip: p.ip, ...pedido })
       const peticion: PeticionSinId = pedido.accion === 'continuar'
         ? { op: 'terminal-crear', accion: 'continuar', agenteId: pedido.agenteId }
         : { op: 'terminal-crear', accion: 'nueva', tipo_agente: pedido.tipo, proyectoId: pedido.proyectoId }
-      return pedirAgente(dep, maquinaId, peticion, respuestaTerminal)
+      let terminalId: string | undefined
+      const r = await pedirAgente(dep, maquinaId, peticion, (datos) => {
+        const resultado = respuestaTerminal(datos)
+        if (resultado.estado === 201) terminalId = (datos as { terminal: { id: string } }).terminal.id
+        return resultado
+      })
+      // Quién abrió qué terminal y con qué resultado (§7).
+      dep.almacen.auditar('terminal-crear', { maquinaId, ip: p.ip, ...pedido, estado: r.estado, terminalId })
+      return r
     }
 
     const terminal = /^\/api\/maquinas\/([^/]+)\/terminales\/([^/]+)$/.exec(ruta)
@@ -206,8 +213,9 @@ export function crearManejadorHub(dep: Dependencias) {
       if (p.metodo !== 'DELETE') return respuesta(405, 'Metodo no permitido')
       const [, maquinaId = '', terminalId = ''] = terminal
       if (!ID_HEX.test(maquinaId) || !ID_HEX.test(terminalId)) return json(404, { error: 'No encontrado' })
-      dep.almacen.auditar('terminal-cerrar', { maquinaId, terminalId, ip: p.ip })
-      return pedirAgente(dep, maquinaId, { op: 'terminal-cerrar', terminalId }, () => respuesta(204, ''))
+      const r = await pedirAgente(dep, maquinaId, { op: 'terminal-cerrar', terminalId }, () => respuesta(204, ''))
+      dep.almacen.auditar('terminal-cerrar', { maquinaId, terminalId, ip: p.ip, estado: r.estado })
+      return r
     }
 
     const commits = /^\/api\/maquinas\/([^/]+)\/proyectos\/([^/]+)\/commits$/.exec(ruta)

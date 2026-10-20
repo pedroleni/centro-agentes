@@ -167,7 +167,10 @@ describe('API del hub', () => {
     const terminales = eventos.filter((e) => e.evento.startsWith('terminal-'))
     expect(terminales.map((e) => e.evento)).toEqual(['terminal-cerrar', 'terminal-crear', 'terminal-crear', 'terminal-crear'])
     expect(terminales[0]?.detalle).toMatchObject({ maquinaId, terminalId: 'bbbbbbbbbbbb' })
-    expect(terminales[1]?.detalle).toMatchObject({ maquinaId, accion: 'nueva', tipo: 'codex', proyectoId: 'aaaaaaaaaaaa' })
+    expect(terminales[0]?.detalle).toMatchObject({ estado: 204 })
+    expect(terminales[1]?.detalle).toMatchObject({ maquinaId, accion: 'nueva', tipo: 'codex', proyectoId: 'aaaaaaaaaaaa', estado: 429 })
+    expect(terminales[2]?.detalle).toMatchObject({ accion: 'continuar', agenteId: 'claude:abc', estado: 201, terminalId: 'bbbbbbbbbbbb' })
+    expect(terminales[3]?.detalle).toMatchObject({ estado: 502 })
   })
 
   it('no se fía de cuerpos mal formados ni de lo que conteste el agente sobre terminales', async () => {

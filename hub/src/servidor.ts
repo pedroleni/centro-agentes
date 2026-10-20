@@ -31,8 +31,10 @@ function cabecera(peticion: IncomingMessage, nombre: string): string | undefined
   return Array.isArray(valor) ? valor[0] : valor
 }
 
+// El hub solo escucha en 127.0.0.1 detrás de `tailscale serve`: la última IP de
+// X-Forwarded-For es la que añade el proxy; las anteriores las pone el cliente.
 function ipDe(peticion: IncomingMessage): string {
-  return cabecera(peticion, 'x-forwarded-for')?.split(',')[0]?.trim() || peticion.socket.remoteAddress || 'desconocida'
+  return cabecera(peticion, 'x-forwarded-for')?.split(',').at(-1)?.trim() || peticion.socket.remoteAddress || 'desconocida'
 }
 
 function medida(valor: string | null, porDefecto: number, minimo: number, maximo: number): number {
@@ -178,6 +180,7 @@ export function arrancarHub(opciones: Opciones): Promise<Server> {
         canal = conexiones.abrirCanal(maquinaId, terminalId, tamano, {
           datos: (bytes) => {
             if (ws.readyState !== ws.OPEN) return
+            if (!sesiones.valida(sesion)) return ws.close(CIERRE_TERMINAL.sesionCaducada, 'La sesión ha caducado')
             if (ws.bufferedAmount > MAXIMO_PENDIENTE_NAVEGADOR) return ws.close(1013, 'Demasiada salida pendiente')
             ws.send(bytes, { binary: true })
           },
@@ -188,7 +191,8 @@ export function arrancarHub(opciones: Opciones): Promise<Server> {
         else ws.close(CIERRE_TERMINAL.maquinaDesconectada, 'La máquina no está conectada')
         return
       }
-      // Cerrar sesión (o que caduque) también corta los terminales abiertos.
+      // Cerrar sesión (o que caduque) también corta los terminales abiertos: se
+      // mira con cada mensaje en los dos sentidos y, si no hay tráfico, cada 30 s.
       const vigilancia = setInterval(() => {
         if (!sesiones.valida(sesion)) ws.close(CIERRE_TERMINAL.sesionCaducada, 'La sesión ha caducado')
       }, VIGILANCIA_SESION_MS)

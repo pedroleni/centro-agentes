@@ -21,13 +21,13 @@ afterAll(async () => {
   await rm(path.join(process.env.TMUX_TMPDIR ?? '/tmp', `tmux-${process.getuid?.() ?? 0}`, SOCKET), { force: true })
 })
 
-async function preparar() {
+async function preparar(maximoEnganches?: number) {
   const puerto = 20_000 + Math.floor(Math.random() * 20_000)
   const gestor = crearGestorTerminalesReal(SOCKET)
   const servidor = await arrancarPanel({
     puerto,
     manejador: async () => ({ estado: 404, cabeceras: {}, cuerpo: '' }),
-    terminal: { maquinaId: async () => 'm1', adjuntar: gestor.adjuntar, clave: 'clave-de-prueba' },
+    terminal: { maquinaId: async () => 'm1', adjuntar: gestor.adjuntar, clave: 'clave-de-prueba', maximoEnganches },
   })
   servidores.push(servidor)
   const info = await gestor.crear({ cwd: '/tmp', argv: ['/bin/sh', '-c', 'cat'], titulo: 'prueba', tipo: 'claude', agenteId: null, proyectoId: null })
@@ -77,5 +77,23 @@ describe.skipIf(sinEntorno)('WebSocket de terminal del panel local', () => {
     expect(salida).toContain('eco-del-terminal')
     await gestor.cerrar(id)
     expect(await cierre).toBe(4000)
+  })
+
+  it('limita los enganches a la vez y acepta un pegado grande escapado en JSON', async () => {
+    const { puerto, id } = await preparar(1)
+    const url = `ws://127.0.0.1:${puerto}/api/maquinas/m1/terminales/${id}/ws`
+    const primero = await abrir(url, `http://127.0.0.1:${puerto}`)
+    expect(primero).toBeInstanceOf(WebSocket)
+    const segundo = await abrir(url, `http://127.0.0.1:${puerto}`) as WebSocket
+    expect(await new Promise<number>((r) => segundo.on('close', (codigo) => r(codigo)))).toBe(1013)
+
+    // 60 K caracteres de control: en JSON ocupan seis bytes cada uno (\u0001).
+    const socket = primero as WebSocket
+    const cierre = new Promise<number>((r) => socket.on('close', (codigo) => r(codigo)))
+    socket.send(JSON.stringify({ tipo: 'entrada', datos: '\u0001'.repeat(60_000) }))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(socket.readyState).toBe(WebSocket.OPEN)
+    socket.close()
+    await cierre
   })
 })

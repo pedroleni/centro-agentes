@@ -171,6 +171,19 @@ describe('canales de terminal', () => {
     expect(nav.fines).toEqual([{ codigo: 4004, motivo: expect.any(String) }])
   })
 
+  it('si el agente suelta el canal por saturación o por tope, el navegador reintenta (1013)', () => {
+    const conexiones = crearConexiones()
+    const agente = conexionFalsa()
+    conexiones.conectar('m1', agente.conexion)
+    for (const motivo of ['saturado', 'demasiados']) {
+      const nav = navegadorFalso()
+      conexiones.abrirCanal('m1', TERMINAL, { cols: 80, rows: 24 }, nav.navegador)
+      const { canal } = agente.enviados.at(-1) as Adjuntar
+      conexiones.recibir('m1', JSON.stringify({ tipo: 'terminal-fin', canal, motivo }))
+      expect(nav.fines).toEqual([{ codigo: 1013, motivo: expect.any(String) }])
+    }
+  })
+
   it('otra máquina no puede escribir en el canal ajeno y un canal desconocido se ignora', () => {
     const conexiones = crearConexiones()
     const m1 = conexionFalsa()

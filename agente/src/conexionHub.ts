@@ -12,6 +12,7 @@ import type { PedidoTerminal, ResultadoTerminal } from './terminales/servicio.js
 
 export type SocketMinimo = {
   readyState: number
+  bufferedAmount?: number
   send(datos: string): void
   close(): void
   onopen: (() => void) | null
@@ -28,6 +29,9 @@ export type TerminalesHub = {
 
 const ESPERAS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 const MAXIMO_CANALES = 16
+// Si el enlace con el hub no da abasto, se suelta el canal en vez de acumular
+// salida en memoria: el navegador reconecta y tmux repinta la pantalla.
+const MAXIMO_PENDIENTE_HUB = 8 * 1024 * 1024
 // 48 KiB por mensaje: en base64 son 64 K caracteres, bajo el límite del protocolo.
 const TROZO_SALIDA = 48 * 1024
 const ESTABLE_MS = 60_000
@@ -104,7 +108,16 @@ export function crearConexionHub(o: Opciones) {
       enganche = o.terminales.adjuntar(
         terminalId,
         tamano,
-        (texto) => { if (canales.get(canal) === enganche) enviarSalida(canal, texto) },
+        (texto) => {
+          if (canales.get(canal) !== enganche) return
+          if ((socket?.bufferedAmount ?? 0) > MAXIMO_PENDIENTE_HUB) {
+            canales.delete(canal)
+            enganche.soltar()
+            enviar({ tipo: 'terminal-fin', canal, motivo: 'saturado' })
+            return
+          }
+          enviarSalida(canal, texto)
+        },
         () => {
           // Si el canal ya se soltó, el hub no espera nada más de él.
           if (canales.get(canal) !== enganche) return

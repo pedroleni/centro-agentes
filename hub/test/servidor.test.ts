@@ -190,7 +190,7 @@ describe.skipIf(sinPuertos)('servidor del hub (sockets reales)', () => {
   it('cierra el terminal con 4401 cuando la sesión del navegador se cierra', async () => {
     const { puerto, almacen, sesiones } = await arrancar()
     const { maquinaId, token } = almacen.canjearCodigo(almacen.crearCodigoAlta().codigo, 'Mac', 'macos')!
-    await agenteFalso(puerto, token)
+    const agente = await agenteFalso(puerto, token)
     const sesion = sesiones.crear()
     const nav = navegador(puerto, maquinaId, `ca_sesion=${sesion}`)
     await abierto(nav.ws)
@@ -198,5 +198,27 @@ describe.skipIf(sinPuertos)('servidor del hub (sockets reales)', () => {
     sesiones.cerrar(sesion)
     nav.ws.send(JSON.stringify({ tipo: 'entrada', datos: 'whoami\r' }))
     expect(await fin).toBe(4401)
+    expect(agente.recibidos.some((m) => m.tipo === 'terminal-entrada')).toBe(false)
+
+    // Tampoco sigue llegando la salida: al primer dato tras cerrar sesión, 4401.
+    const otraSesion = sesiones.crear()
+    const dos = navegador(puerto, maquinaId, `ca_sesion=${otraSesion}`)
+    await abierto(dos.ws)
+    const { canal } = await esperar(() => agente.recibidos.filter((m): m is Extract<MensajeHub, { tipo: 'terminal-adjuntar' }> => m.tipo === 'terminal-adjuntar')[1])
+    const finDos = cerrado(dos.ws)
+    sesiones.cerrar(otraSesion)
+    agente.ws.send(JSON.stringify({ tipo: 'terminal-salida', canal, datos: Buffer.from('secreto').toString('base64') }))
+    expect(await finDos).toBe(4401)
+    expect(dos.bytes).toEqual([])
+  })
+
+  it('apunta en la auditoría la IP que añade el proxy (la última de X-Forwarded-For)', async () => {
+    const { puerto, almacen } = await arrancar()
+    await fetch(`http://127.0.0.1:${puerto}/api/sesion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${puerto}`, 'X-Forwarded-For': '1.2.3.4, 100.64.0.9' },
+      body: JSON.stringify({ contrasena: 'mala' }),
+    })
+    expect(almacen.ultimosEventos(10).find((e) => e.evento === 'entrada-fallida')?.detalle).toEqual({ ip: '100.64.0.9' })
   })
 })

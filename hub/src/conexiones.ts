@@ -3,6 +3,7 @@ import {
   CIERRE_TERMINAL,
   LIMITE_MENSAJE_BYTES,
   MensajeAgente,
+  trocearTexto,
   type Instantanea,
   type MaquinaVista,
   type MensajeHub,
@@ -17,9 +18,9 @@ import {
 
 const LATIDO_MAXIMO_MS = 20_000
 const MAXIMO_CANALES_POR_MAQUINA = 16
-// Trozos de entrada de 16 K unidades UTF-16: como mucho 48 KiB en UTF-8, por
-// debajo de los 64 KiB que admite cada mensaje terminal-entrada.
-const TROZO_ENTRADA = 16 * 1024
+// Cierre que el navegador entiende como "vuelve a intentarlo": al reconectar,
+// tmux repinta la pantalla entera.
+const CIERRE_REINTENTAR = 1013
 
 export type ConexionAgente = {
   enviar(mensaje: MensajeHub): void
@@ -58,20 +59,6 @@ type Pendiente = {
 }
 
 type CanalAbierto = { maquinaId: string; navegador: NavegadorCanal }
-
-// Parte el texto sin separar los pares sustitutos, así cada trozo es UTF-8 válido.
-function trocear(texto: string): string[] {
-  const trozos: string[] = []
-  let inicio = 0
-  while (inicio < texto.length) {
-    let fin = Math.min(texto.length, inicio + TROZO_ENTRADA)
-    const ultimo = texto.charCodeAt(fin - 1)
-    if (fin < texto.length && ultimo >= 0xd800 && ultimo <= 0xdbff) fin -= 1
-    trozos.push(texto.slice(inicio, fin))
-    inicio = fin
-  }
-  return trozos
-}
 
 type DistribuirSinId<T> = T extends unknown ? Omit<T, 'id' | 'tipo'> : never
 export type PeticionSinId = DistribuirSinId<Peticion>
@@ -146,8 +133,9 @@ export function crearConexiones(ahora: () => number = Date.now) {
         const canal = canalDe(maquinaId, mensaje.canal)
         if (canal === null) return
         canales.delete(mensaje.canal)
-        if (mensaje.motivo === 'no-encontrado') canal.navegador.fin(CIERRE_TERMINAL.noEncontrado, 'Terminal no encontrado')
-        else canal.navegador.fin(CIERRE_TERMINAL.terminada, 'La sesión ha terminado')
+        if (mensaje.motivo === 'terminada') canal.navegador.fin(CIERRE_TERMINAL.terminada, 'La sesión ha terminado')
+        else if (mensaje.motivo === 'no-encontrado') canal.navegador.fin(CIERRE_TERMINAL.noEncontrado, 'Terminal no encontrado')
+        else canal.navegador.fin(CIERRE_REINTENTAR, 'La máquina ha soltado el terminal')
       } else if (mensaje.tipo === 'respuesta') {
         const pendiente = pendientes.get(mensaje.id)
         if (pendiente === undefined || pendiente.maquinaId !== maquinaId) return
@@ -192,7 +180,7 @@ export function crearConexiones(ahora: () => number = Date.now) {
       }
       return {
         escribir(texto) {
-          for (const trozo of trocear(texto)) {
+          for (const trozo of trocearTexto(texto)) {
             enviar({ tipo: 'terminal-entrada', canal: id, datos: Buffer.from(trozo, 'utf8').toString('base64') })
           }
         },

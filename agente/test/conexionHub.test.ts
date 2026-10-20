@@ -12,6 +12,7 @@ class SocketFalso {
   onerror: (() => void) | null = null
   cerrado = false
   readyState = 1
+  bufferedAmount = 0
   send(datos: string) { this.enviados.push(JSON.parse(datos)) }
   close() { this.cerrado = true }
   abrir() { this.onopen?.() }
@@ -274,5 +275,25 @@ describe('conexión con el hub', () => {
     sockets[1]!.llega({ tipo: 'terminal-adjuntar', canal: 'c3', terminalId: 'aaaaaaaaaaaa', cols: 80, rows: 24 })
     conexion.parar()
     expect(enganches[2]!.soltar).toHaveBeenCalledTimes(1)
+  })
+
+  it('si el enlace con el hub se satura, suelta el canal y lo dice en vez de acumular', async () => {
+    vi.useFakeTimers()
+    const enganche = { escribir: vi.fn(), redimensionar: vi.fn(), soltar: vi.fn() }
+    let alDatos: (datos: string) => void = () => {}
+    const adjuntar = vi.fn((_id: string, _t: unknown, datos: (d: string) => void) => { alDatos = datos; return enganche })
+    const { conexion, sockets } = preparar({ crear: vi.fn(), cerrar: vi.fn(), adjuntar })
+    conexion.arrancar()
+    const s = sockets[0]!
+    s.abrir()
+    s.llega({ tipo: 'terminal-adjuntar', canal: 'c1', terminalId: 'aaaaaaaaaaaa', cols: 80, rows: 24 })
+    s.bufferedAmount = 9 * 1024 * 1024
+    const antes = s.enviados.length
+    alDatos('mucha salida')
+    expect(enganche.soltar).toHaveBeenCalledTimes(1)
+    expect(s.enviados.slice(antes)).toEqual([{ tipo: 'terminal-fin', canal: 'c1', motivo: 'saturado' }])
+    alDatos('más')
+    expect(s.enviados.length).toBe(antes + 1)
+    conexion.parar()
   })
 })
