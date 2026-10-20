@@ -193,6 +193,7 @@ function agenteClaude(
       ...tarea,
       texto: enmascararSecretos(tarea.texto),
     })),
+    commitsMs: resumen.commitsMs,
   }
 }
 
@@ -219,6 +220,7 @@ function agenteClaudeSinTranscript(sesion: SesionViva, proyectos: ProyectoBase[]
     entrada: sesion.entrada,
     puedeContinuar: false,
     tareas: [],
+    commitsMs: [],
   }
 }
 
@@ -360,6 +362,7 @@ function agenteDeHilo(
     entrada: hilo.source,
     puedeContinuar: esTarea ? estado !== 'en-curso' : estado === 'cerrada',
     tareas: [],
+    commitsMs: [],
   }
 }
 
@@ -390,6 +393,7 @@ function agenteDeTareaSinHilo(
     entrada: 'exec',
     puedeContinuar: estado !== 'en-curso',
     tareas: [],
+    commitsMs: [],
   }
 }
 

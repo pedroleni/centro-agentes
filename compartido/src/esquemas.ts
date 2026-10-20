@@ -57,6 +57,14 @@ export const TareaSesion = z.object({
 })
 export type TareaSesion = z.infer<typeof TareaSesion>
 
+export const Commit = z.object({
+  hash: z.string(),
+  mensaje: z.string(),
+  fechaMs: z.number(),
+  autor: z.string(),
+})
+export type Commit = z.infer<typeof Commit>
+
 export const Agente = z.object({
   id: z.string(),
   tipo: z.enum(['claude', 'codex']),
@@ -78,6 +86,7 @@ export const Agente = z.object({
   entrada: z.string().nullable(),
   puedeContinuar: z.boolean(),
   tareas: z.array(TareaSesion),
+  commitsMs: z.array(z.number()),
 })
 export type Agente = z.infer<typeof Agente>
 

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { EstadoGit } from '@centro/compartido'
+import type { Commit, EstadoGit } from '@centro/compartido'
+import { enmascararSecretos } from '../util/enmascarar.js'
 
 const execFileAsync = promisify(execFile)
 const DIA_MS = 24 * 60 * 60 * 1_000
@@ -135,4 +136,42 @@ export async function estadoGit(ruta: string, ahoraMs: number): Promise<EstadoGi
   }
 
   return estado
+}
+
+export async function commitsRecientes(
+  ruta: string,
+  desdeMs: number,
+  maximo = 200,
+): Promise<Commit[]> {
+  const salida = await git(ruta, [
+    'log',
+    '--no-show-signature',
+    `--since=${new Date(desdeMs).toISOString()}`,
+    '-n',
+    String(maximo),
+    '--format=%h%x00%s%x00%ct%x00%an',
+  ])
+  if (salida === null) return []
+
+  const commits: Commit[] = []
+  for (const linea of salida.split(/\r?\n/)) {
+    if (linea.length === 0) continue
+    const [hash, mensaje, fechaSegundos, autor] = linea.split('\0')
+    const fecha = Number(fechaSegundos)
+    if (
+      hash === undefined ||
+      mensaje === undefined ||
+      autor === undefined ||
+      !Number.isFinite(fecha)
+    ) {
+      continue
+    }
+    commits.push({
+      hash,
+      mensaje: enmascararSecretos(mensaje),
+      fechaMs: fecha * 1_000,
+      autor,
+    })
+  }
+  return commits
 }

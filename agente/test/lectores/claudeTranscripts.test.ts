@@ -58,6 +58,7 @@ describe('crearLectorClaude', () => {
                   todos: [{ content: 'Lista anterior', status: 'pending' }],
                 },
               },
+              { type: 'tool_use', name: 'Bash', input: { command: 'git status' } },
             ],
           },
           cwd: '/otra/ruta/que/no-gana',
@@ -89,6 +90,11 @@ describe('crearLectorClaude', () => {
               { type: 'tool_use', name: 'Edit', input: { file_path: '/repo/a.ts' } },
               { type: 'tool_use', name: 'Edit', input: { file_path: '/repo/a.ts' } },
               { type: 'tool_use', name: 'Write', input: { file_path: '/repo/b.ts' } },
+              {
+                type: 'tool_use',
+                name: 'Bash',
+                input: { command: 'git add . && git commit -m "x"' },
+              },
             ],
           },
           gitBranch: 'tarea/seis',
@@ -116,6 +122,7 @@ describe('crearLectorClaude', () => {
         { texto: 'Terminada', estado: 'hecha' },
       ],
       ficherosEditados: ['/repo/a.ts', '/repo/b.ts'],
+      commitsMs: [Date.parse('2026-10-19T09:00:00.000Z')],
     })
   })
 

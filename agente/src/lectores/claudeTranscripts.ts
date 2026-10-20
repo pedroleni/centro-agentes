@@ -18,6 +18,7 @@ export type ResumenClaude = {
   ultimaActividadMs: number | null
   tareas: TareaSesion[]
   ficherosEditados: string[]
+  commitsMs: number[]
 }
 
 export type TranscriptEncontrado = {
@@ -92,6 +93,7 @@ function estadoInicial(): EstadoResumen {
     ultimaActividadMs: null,
     tareas: [],
     ficherosEditados: [],
+    commitsMs: [],
   }
 }
 
@@ -137,7 +139,21 @@ function aplicarLinea(estado: EstadoResumen, valor: unknown): void {
       numeroUso(mensaje.usage, 'cache_read_input_tokens')
   }
   if (Array.isArray(mensaje.content)) {
-    for (const contenido of mensaje.content) aplicarHerramienta(estado, contenido)
+    let ejecutoCommit = false
+    for (const contenido of mensaje.content) {
+      aplicarHerramienta(estado, contenido)
+      if (
+        esRegistro(contenido) &&
+        contenido.type === 'tool_use' &&
+        contenido.name === 'Bash' &&
+        esRegistro(contenido.input) &&
+        typeof contenido.input.command === 'string' &&
+        /\bgit\b[^\n]*\bcommit\b/.test(contenido.input.command)
+      ) {
+        ejecutoCommit = true
+      }
+    }
+    if (ejecutoCommit && fechaMs !== null) estado.commitsMs.push(fechaMs)
   }
 }
 
@@ -165,6 +181,7 @@ export function crearLectorClaude(): { resumen(ruta: string): Promise<ResumenCla
         pr: estado.pr === null ? null : { ...estado.pr },
         tareas: estado.tareas.map((tarea) => ({ ...tarea })),
         ficherosEditados: [...estado.ficherosEditados],
+        commitsMs: [...estado.commitsMs],
       }
     },
   }

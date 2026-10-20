@@ -60,6 +60,7 @@ const ejemploValido = {
       entrada: null,
       puedeContinuar: true,
       tareas: [{ texto: 'Probar', estado: 'pendiente' as const }],
+      commitsMs: [],
     },
   ],
 }

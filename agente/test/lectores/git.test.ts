@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, test } from 'vitest'
-import { estadoGit } from '../../src/lectores/git.js'
+import { commitsRecientes, estadoGit } from '../../src/lectores/git.js'
 import { crearRepo, ejecutarGit } from '../ayudas/repo.js'
 
 const execFileAsync = promisify(execFile)
@@ -156,5 +156,41 @@ describe('estadoGit', () => {
 
     await expect(readFile(marcador, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     expect(estado.cambios).toBe(1)
+  })
+})
+
+describe('commitsRecientes', () => {
+  test('devuelve commits recientes en orden descendente, con autor y secretos enmascarados', async () => {
+    const repo = path.join(await temporal(), 'recientes')
+    await crearRepo(repo, [
+      { mensaje: 'Primero', fechaMs: AHORA - 3 * DIA_MS },
+      { mensaje: 'Clave sk-abcdefghijklmnopqrst', fechaMs: AHORA - 2 * DIA_MS },
+      { mensaje: 'Último', fechaMs: AHORA - DIA_MS },
+    ])
+
+    const commits = await commitsRecientes(repo, AHORA - 4 * DIA_MS)
+
+    expect(commits).toHaveLength(3)
+    expect(commits.map((commit) => commit.mensaje)).toEqual([
+      'Último',
+      'Clave «oculto»',
+      'Primero',
+    ])
+    expect(commits.map((commit) => commit.autor)).toEqual([
+      'Pruebas Centro',
+      'Pruebas Centro',
+      'Pruebas Centro',
+    ])
+    expect(commits.map((commit) => commit.fechaMs)).toEqual([
+      AHORA - DIA_MS,
+      AHORA - 2 * DIA_MS,
+      AHORA - 3 * DIA_MS,
+    ])
+  })
+
+  test('devuelve una lista vacía para una ruta inexistente', async () => {
+    const inexistente = path.join(await temporal(), 'borrada')
+
+    await expect(commitsRecientes(inexistente, 0)).resolves.toEqual([])
   })
 })
