@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { crearTerminalPedido } from '../../src/terminales/servicio.js'
 
 const agente = { id: 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0', tipo: 'claude', titulo: 'Sesión', cwd: '/Users/p/x', proyectoIds: ['aaaaaaaaaaaa'], puedeContinuar: true }
-const instantanea = { proyectos: [{ id: 'aaaaaaaaaaaa', nombre: 'x', ruta: '/Users/p/x' }], agentes: [agente, { ...agente, id: 'claude:11111111-2222-3333-4444-555555555555', puedeContinuar: false }] } as never
+const instantanea = { maquina: { so: 'macos' }, proyectos: [{ id: 'aaaaaaaaaaaa', nombre: 'x', ruta: '/Users/p/x' }], agentes: [agente, { ...agente, id: 'claude:11111111-2222-3333-4444-555555555555', puedeContinuar: false }] } as never
+const instantaneaWindows = { ...instantanea, maquina: { so: 'windows' } } as never
 const info = { id: '0123456789ab', titulo: 'Claude · Sesión', tipo: 'claude', agenteId: agente.id, proyectoId: 'aaaaaaaaaaaa', creadoMs: 1 }
 
 function gestor(crear = vi.fn(async () => info)) {
@@ -44,5 +45,15 @@ describe('crearTerminalPedido', () => {
     expect(await crearTerminalPedido({ accion: 'continuar', agenteId: 'claude:11111111-2222-3333-4444-555555555555' }, abierta, gestor(crear)))
       .toEqual({ ok: true, terminal: { ...info, agenteId: 'claude:11111111-2222-3333-4444-555555555555' } })
     expect(crear).not.toHaveBeenCalled()
+  })
+
+  it('en Windows crea el terminal pasando por PowerShell', async () => {
+    const crear = vi.fn(async () => info)
+    const windows = {
+      ...instantaneaWindows,
+      proyectos: [{ id: 'aaaaaaaaaaaa', nombre: 'x', ruta: 'C:\\Users\\pedro\\x' }],
+    } as never
+    await crearTerminalPedido({ accion: 'nueva', tipo: 'claude', proyectoId: 'aaaaaaaaaaaa' }, windows, gestor(crear))
+    expect(crear).toHaveBeenCalledWith(expect.objectContaining({ argv: ['powershell.exe', '-NoLogo', '-Command', 'claude'] }))
   })
 })

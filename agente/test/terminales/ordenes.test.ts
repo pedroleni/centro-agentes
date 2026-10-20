@@ -14,7 +14,7 @@ const proyecto = { id: 'aaaaaaaaaaaa', nombre: 'centro-agentes', ruta: '/Users/p
 
 describe('ordenTerminal', () => {
   it('continúa una sesión cerrada de Claude en su carpeta', () => {
-    expect(ordenTerminal({ accion: 'continuar', agente: claude })).toEqual({
+    expect(ordenTerminal({ accion: 'continuar', agente: claude }, 'macos')).toEqual({
       cwd: '/Users/p/proyecto',
       argv: ['/bin/zsh', '-lc', 'exec claude --resume 323ca3f4-7985-4de1-869d-e6b0dc0cace0'],
       titulo: 'Claude · Arreglar el login',
@@ -25,32 +25,50 @@ describe('ordenTerminal', () => {
   })
 
   it('continúa un hilo de Codex', () => {
-    expect(ordenTerminal({ accion: 'continuar', agente: codex })).toMatchObject({
+    expect(ordenTerminal({ accion: 'continuar', agente: codex }, 'macos')).toMatchObject({
       argv: ['/bin/zsh', '-lc', 'exec codex resume 01a15a2c-2c0c-7be2-84db-21399519cc26'],
       tipo: 'codex',
     })
   })
 
   it('abre una sesión nueva de Claude o de Codex en la carpeta del proyecto', () => {
-    expect(ordenTerminal({ accion: 'nueva', tipo: 'claude', proyecto })).toEqual({
+    expect(ordenTerminal({ accion: 'nueva', tipo: 'claude', proyecto }, 'macos')).toEqual({
       cwd: '/Users/p/centro-agentes', argv: ['/bin/zsh', '-lc', 'exec claude'], titulo: 'Claude · centro-agentes',
       tipo: 'claude', agenteId: null, proyectoId: 'aaaaaaaaaaaa',
     })
-    expect(ordenTerminal({ accion: 'nueva', tipo: 'codex', proyecto })).toMatchObject({ argv: ['/bin/zsh', '-lc', 'exec codex'] })
+    expect(ordenTerminal({ accion: 'nueva', tipo: 'codex', proyecto }, 'macos')).toMatchObject({ argv: ['/bin/zsh', '-lc', 'exec codex'] })
   })
 
   it('no continúa una sesión que sigue abierta en otro sitio', () => {
-    expect(ordenTerminal({ accion: 'continuar', agente: { ...claude, puedeContinuar: false } })).toEqual({ error: 'Esta sesión sigue abierta en otro sitio' })
+    expect(ordenTerminal({ accion: 'continuar', agente: { ...claude, puedeContinuar: false } }, 'macos')).toEqual({ error: 'Esta sesión sigue abierta en otro sitio' })
   })
 
   it('rechaza ids con caracteres de shell, subagentes y tareas sin hilo', () => {
     for (const id of ['codex:--full-auto', 'codex:--dangerously-bypass-approvals-and-sandbox', 'claude:------------------------------------', 'claude:abc; rm -rf ~', 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0 && ls', 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0:agente', 'codex:$(whoami)', 'codex-tarea:0123456789abcdef']) {
-      expect(ordenTerminal({ accion: 'continuar', agente: { ...claude, id, tipo: id.startsWith('claude') ? 'claude' : 'codex' } as Agente })).toHaveProperty('error')
+      expect(ordenTerminal({ accion: 'continuar', agente: { ...claude, id, tipo: id.startsWith('claude') ? 'claude' : 'codex' } as Agente }, 'macos')).toHaveProperty('error')
     }
   })
 
   it('exige una carpeta absoluta', () => {
-    expect(ordenTerminal({ accion: 'continuar', agente: { ...claude, cwd: '' } })).toHaveProperty('error')
-    expect(ordenTerminal({ accion: 'nueva', tipo: 'claude', proyecto: { ...proyecto, ruta: 'relativa' } })).toHaveProperty('error')
+    expect(ordenTerminal({ accion: 'continuar', agente: { ...claude, cwd: '' } }, 'macos')).toHaveProperty('error')
+    expect(ordenTerminal({ accion: 'nueva', tipo: 'claude', proyecto: { ...proyecto, ruta: 'relativa' } }, 'macos')).toHaveProperty('error')
+  })
+
+  it('en Windows lanza la orden con PowerShell', () => {
+    const claudeWin = { ...claude, cwd: 'C:\\Users\\pedro\\web' } as Agente
+    const proyectoWin = { ...proyecto, ruta: 'C:\\Users\\pedro\\web' } as Proyecto
+    expect(ordenTerminal({ accion: 'continuar', agente: claudeWin }, 'windows')).toMatchObject({
+      cwd: 'C:\\Users\\pedro\\web',
+      argv: ['powershell.exe', '-NoLogo', '-Command', 'claude --resume 323ca3f4-7985-4de1-869d-e6b0dc0cace0'],
+    })
+    expect(ordenTerminal({ accion: 'nueva', tipo: 'codex', proyecto: proyectoWin }, 'windows')).toMatchObject({
+      argv: ['powershell.exe', '-NoLogo', '-Command', 'codex'],
+    })
+  })
+
+  it('cada sistema solo acepta sus carpetas absolutas', () => {
+    const proyectoWin = { ...proyecto, ruta: 'C:\\Users\\pedro\\web' } as Proyecto
+    expect(ordenTerminal({ accion: 'nueva', tipo: 'claude', proyecto: { ...proyectoWin, ruta: 'web' } }, 'windows')).toEqual({ error: 'La carpeta del proyecto no es válida' })
+    expect(ordenTerminal({ accion: 'nueva', tipo: 'claude', proyecto: proyectoWin }, 'macos')).toEqual({ error: 'La carpeta del proyecto no es válida' })
   })
 })

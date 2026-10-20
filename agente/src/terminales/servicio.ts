@@ -16,7 +16,7 @@ export type ResultadoTerminal =
 
 export async function crearTerminalPedido(
   pedido: PedidoTerminal,
-  instantanea: Pick<Instantanea, 'agentes' | 'proyectos' | 'terminales'>,
+  instantanea: Pick<Instantanea, 'maquina' | 'agentes' | 'proyectos' | 'terminales'>,
   gestor: Pick<GestorTerminales, 'crear'>,
 ): Promise<ResultadoTerminal> {
   let orden
@@ -27,11 +27,11 @@ export async function crearTerminalPedido(
     if (abierto !== undefined) return { ok: true, terminal: abierto }
     const agente = instantanea.agentes.find((candidato) => candidato.id === pedido.agenteId)
     if (agente === undefined) return { ok: false, estado: 404, error: 'Sesión no encontrada en esta máquina' }
-    orden = ordenTerminal({ accion: 'continuar', agente })
+    orden = ordenTerminal({ accion: 'continuar', agente }, instantanea.maquina.so)
   } else {
     const proyecto = instantanea.proyectos.find((candidato) => candidato.id === pedido.proyectoId)
     if (proyecto === undefined) return { ok: false, estado: 404, error: 'Proyecto no encontrado en esta máquina' }
-    orden = ordenTerminal({ accion: 'nueva', tipo: pedido.tipo, proyecto })
+    orden = ordenTerminal({ accion: 'nueva', tipo: pedido.tipo, proyecto }, instantanea.maquina.so)
   }
   if ('error' in orden) {
     return { ok: false, estado: orden.error === 'Esta sesión sigue abierta en otro sitio' ? 409 : 400, error: orden.error }

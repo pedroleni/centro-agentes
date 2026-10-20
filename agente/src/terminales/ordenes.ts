@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { Agente, Proyecto } from '@centro/compartido'
+import type { Agente, Proyecto, SO } from '@centro/compartido'
 
 // Única fuente de las órdenes que el panel puede ejecutar en una máquina. El hub
 // solo manda ids; aquí se montan las órdenes, con ids validados por expresión
@@ -24,19 +24,23 @@ export type OrdenTerminal = {
 
 const NOMBRE = { claude: 'Claude', codex: 'Codex' } as const
 
-// Login shell para que un LaunchAgent encuentre el PATH del usuario; `exec` para
-// que, al salir de Claude o Codex, el terminal se cierre sin dejar un shell abierto.
-function enShell(orden: string): string[] {
+// macOS: login shell para que un LaunchAgent encuentre el PATH del usuario, y
+// `exec` para que, al salir de Claude o Codex, el terminal se cierre sin dejar un
+// shell abierto. Windows: PowerShell con su perfil resuelve los `.cmd` que deja
+// npm (node-pty no mira PATHEXT) y termina cuando termina la orden.
+function enShell(orden: string, so: SO): string[] {
+  if (so === 'windows') return ['powershell.exe', '-NoLogo', '-Command', orden]
   return ['/bin/zsh', '-lc', `exec ${orden}`]
 }
 
-export function ordenTerminal(peticion: PeticionTerminal): OrdenTerminal | { error: string } {
+export function ordenTerminal(peticion: PeticionTerminal, so: SO): OrdenTerminal | { error: string } {
   if (peticion.accion === 'nueva') {
     const { proyecto, tipo } = peticion
-    if (!path.isAbsolute(proyecto.ruta)) return { error: 'La carpeta del proyecto no es válida' }
+    const rutas = so === 'windows' ? path.win32 : path.posix
+    if (!rutas.isAbsolute(proyecto.ruta)) return { error: 'La carpeta del proyecto no es válida' }
     return {
       cwd: proyecto.ruta,
-      argv: enShell(tipo),
+      argv: enShell(tipo, so),
       titulo: `${NOMBRE[tipo]} · ${proyecto.nombre}`,
       tipo,
       agenteId: null,
@@ -46,7 +50,8 @@ export function ordenTerminal(peticion: PeticionTerminal): OrdenTerminal | { err
 
   const { agente } = peticion
   if (!agente.puedeContinuar) return { error: 'Esta sesión sigue abierta en otro sitio' }
-  if (!path.isAbsolute(agente.cwd)) return { error: 'La carpeta de la sesión no es válida' }
+  const rutas = so === 'windows' ? path.win32 : path.posix
+  if (!rutas.isAbsolute(agente.cwd)) return { error: 'La carpeta de la sesión no es válida' }
   const [prefijo, id, ...resto] = agente.id.split(':')
   if (resto.length > 0 || id === undefined) return { error: 'Esta sesión no se puede continuar' }
 
@@ -60,7 +65,7 @@ export function ordenTerminal(peticion: PeticionTerminal): OrdenTerminal | { err
   }
   return {
     cwd: agente.cwd,
-    argv: enShell(orden),
+    argv: enShell(orden, so),
     titulo: `${NOMBRE[agente.tipo]} · ${agente.titulo}`,
     tipo: agente.tipo,
     agenteId: agente.id,
