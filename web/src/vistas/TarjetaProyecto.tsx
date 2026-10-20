@@ -1,10 +1,12 @@
 import type { TarjetaDatos } from '../logica/agrupar.js'
 import { fechaRelativa } from '../logica/formato.js'
+import { rutaProyecto } from '../logica/rutas.js'
 import { FilaAgente } from './FilaAgente.js'
 
 type PropiedadesTarjetaProyecto = {
   tarjeta: TarjetaDatos
   ahora: number
+  maquinaId?: string | null
 }
 
 function alturaActividad(valor: number, maximo: number): number {
@@ -14,13 +16,13 @@ function alturaActividad(valor: number, maximo: number): number {
   return Math.max(4, Math.round(16 * valor / maximo))
 }
 
-export function TarjetaProyecto({ tarjeta, ahora }: PropiedadesTarjetaProyecto) {
+export function TarjetaProyecto({ tarjeta, ahora, maquinaId = null }: PropiedadesTarjetaProyecto) {
   const { proyecto, agentes } = tarjeta
   const agentesVisibles = agentes.slice(0, 4)
   const agentesRestantes = agentes.length - agentesVisibles.length
   const maximoActividad = Math.max(...proyecto.git.actividad14d)
   const ultimoCommit = proyecto.git.ultimoCommit
-  const href = `#/proyecto/${proyecto.id}`
+  const href = rutaProyecto(maquinaId, proyecto.id)
 
   return (
     <article
@@ -47,7 +49,7 @@ export function TarjetaProyecto({ tarjeta, ahora }: PropiedadesTarjetaProyecto) 
       {agentesVisibles.length > 0 && (
         <div className="ca-agents">
           {agentesVisibles.map((agente) => (
-            <FilaAgente key={agente.id} agente={agente} ahora={ahora} />
+            <FilaAgente maquinaId={maquinaId} key={agente.id} agente={agente} ahora={ahora} />
           ))}
           {agentesRestantes > 0 && <span className="ca-more">+{agentesRestantes} más</span>}
         </div>

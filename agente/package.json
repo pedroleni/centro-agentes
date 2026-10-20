@@ -6,5 +6,10 @@
   "dependencies": {
     "@centro/compartido": "*",
     "smol-toml": "^1.9.1"
+  },
+  "exports": {
+    "./panel/*": "./src/panel/*.ts",
+    "./linea": "./src/linea.ts",
+    "./util/*": "./src/util/*.ts"
   }
 }

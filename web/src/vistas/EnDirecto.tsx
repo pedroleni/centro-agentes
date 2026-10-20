@@ -2,11 +2,20 @@ import type { Accion, Agente, Proyecto } from '@centro/compartido'
 import { etiquetaEstado, fechaRelativa, porcentajeContexto, tiempoAgente } from '../logica/formato.js'
 import { nombreRol } from '../logica/roles.js'
 import { Avatar } from './Avatar.js'
+import { rutaAgente } from '../logica/rutas.js'
 
-type PropiedadesEnDirecto = {
+type FuenteEnDirecto = {
+  maquina: { id: string; nombre: string } | null
   agentes: Agente[]
   proyectos: Proyecto[]
+}
+
+type PropiedadesEnDirecto = {
   ahora: number
+  // Con varias máquinas se pasan sus fuentes; con una sola basta agentes y proyectos.
+  fuentes?: FuenteEnDirecto[]
+  agentes?: Agente[]
+  proyectos?: Proyecto[]
 }
 
 const ICONOS_ACCION: Record<Accion['tipo'], string> = {
@@ -43,17 +52,20 @@ function proyectoDelAgente(agente: Agente, proyectos: Proyecto[]): Proyecto | nu
   return proyectos.find((proyecto) => agente.proyectoIds.includes(proyecto.id)) ?? null
 }
 
-export function EnDirecto({ agentes, proyectos, ahora }: PropiedadesEnDirecto) {
-  const activos = agentes.filter((agente) =>
+export function EnDirecto({ ahora, fuentes, agentes = [], proyectos = [] }: PropiedadesEnDirecto) {
+  const todas = fuentes ?? [{ maquina: null, agentes, proyectos }]
+  const entradas = todas.flatMap((fuente) => fuente.agentes.map((agente) => ({ agente, fuente })))
+  const activos = entradas.filter(({ agente }) =>
     agente.estado === 'trabajando'
       || agente.estado === 'esperandote'
       || agente.estado === 'en-curso',
   )
-  const terminadosRecientes = agentes.filter((agente) =>
+  const terminadosRecientes = entradas.filter(({ agente }) =>
     agente.estado === 'terminado'
       && ahora - agente.ultimaActividadMs < 15 * 60_000,
   )
   const visibles = [...activos, ...terminadosRecientes]
+  const mostrarMaquina = todas.length > 1
 
   return (
     <section className="ca-direct" aria-labelledby="titulo-en-directo">
@@ -62,8 +74,8 @@ export function EnDirecto({ agentes, proyectos, ahora }: PropiedadesEnDirecto) {
         <p className="ca-direct-empty">Ningún agente trabajando ahora mismo</p>
       ) : (
         <div className="ca-direct-grid">
-          {visibles.map((agente) => {
-            const proyecto = proyectoDelAgente(agente, proyectos)
+          {visibles.map(({ agente, fuente }) => {
+            const proyecto = proyectoDelAgente(agente, fuente.proyectos)
             const accion = agente.ultimaAccion
             const porcentaje = porcentajeContexto(agente)
             const familia = agente.rol.startsWith('claude') ? 'claude' : 'codex'
@@ -73,16 +85,19 @@ export function EnDirecto({ agentes, proyectos, ahora }: PropiedadesEnDirecto) {
 
             return (
               <a
-                key={agente.id}
+                key={`${fuente.maquina?.id ?? ''}|${agente.id}`}
                 className={`ca-direct-card ${familia} ${estado}`}
-                href={`#/agente/${encodeURIComponent(agente.id)}`}
+                href={rutaAgente(fuente.maquina?.id ?? null, agente.id)}
               >
                 <span className="ca-direct-head">
                   <Avatar rol={agente.rol} estado={agente.estado} tamano={72} />
                   <span className="ca-direct-info">
                     <span className="ca-direct-role">{nombreRol(agente.rol)}</span>
                     <strong title={agente.titulo}>{agente.titulo}</strong>
-                    <span className="ca-direct-project">{proyecto?.nombre ?? 'Sin proyecto'}</span>
+                    <span className="ca-direct-project">
+                      {mostrarMaquina && fuente.maquina !== null && <span className="ca-direct-maquina">{fuente.maquina.nombre}</span>}
+                      {proyecto?.nombre ?? 'Sin proyecto'}
+                    </span>
                   </span>
                   <AnilloContexto porcentaje={porcentaje} />
                 </span>

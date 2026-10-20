@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react'
 import { historialPorDia } from '../logica/historial.js'
 import { etiquetaEstado, nombreModelo } from '../logica/formato.js'
 import { Avatar } from './Avatar.js'
+import { rutaAgente } from '../logica/rutas.js'
 
 type PropiedadesHistorial = {
   commits: Commit[]
   agentes: Agente[]
   proyectoId: string
   ahora: number
+  maquinaId?: string | null
 }
 
 function hora(fechaMs: number): string {
@@ -24,7 +26,7 @@ function CommitEnHistorial({ commit }: { commit: Commit }) {
   )
 }
 
-export function Historial({ commits, agentes, proyectoId, ahora }: PropiedadesHistorial) {
+export function Historial({ commits, agentes, proyectoId, ahora, maquinaId = null }: PropiedadesHistorial) {
   const [limite, establecerLimite] = useState(40)
   const dias = historialPorDia(commits, agentes, proyectoId, ahora)
   const totalEventos = dias.reduce((total, dia) => total + dia.eventos.length, 0)
@@ -74,7 +76,7 @@ export function Historial({ commits, agentes, proyectoId, ahora }: PropiedadesHi
                     <span className="t">{hora(evento.fechaMs)}</span>
                     <a
                       className="what cd-agent-history-link"
-                      href={`#/agente/${encodeURIComponent(agente.id)}`}
+                      href={rutaAgente(maquinaId, agente.id)}
                       aria-label={agente.titulo}
                     >
                       <Avatar rol={agente.rol} estado={agente.estado} tamano={28} />

@@ -293,3 +293,36 @@ button, input { font:inherit; }
 .md pre code { background:none; padding:0; color:inherit; }
 .md a { color:var(--blue); }
 .md-titulo { margin-top:4px; }
+
+/* --- Fase 3: varias máquinas, entrada y alta --- */
+.ca-vivo-global { display:flex; justify-content:flex-end; margin:6px 0 2px; }
+.ma-bloque { margin-top:22px; padding-top:6px; border-top:1px solid var(--line); min-width:0; }
+.ma-bloque:first-of-type { border-top:0; }
+.ma-bloque .ca-machine { display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; }
+.ma-nombre { font-size:17px; min-width:0; overflow-wrap:anywhere; }
+.ma-estado { font-size:12.5px; color:var(--mute); }
+.ma-estado.on { color:#1f9d55; font-weight:600; }
+.ma-desconectada .ca-grid, .ma-desconectada .ca-quiet, .ma-desconectada .ca-orphans { opacity:.55; filter:saturate(.6); }
+.ca-direct-maquina { display:inline-block; font-size:10.5px; font-weight:700; color:#fff; background:#334155; border-radius:999px; padding:1px 7px; margin-right:6px; vertical-align:1px; }
+.ca-anadir { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.35); border-radius:999px; padding:5px 12px; font-size:12.5px; font-weight:600; cursor:pointer; }
+.ca-anadir:hover { background:rgba(255,255,255,.28); }
+
+.am-fondo { position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:flex-start; justify-content:center; padding:60px 16px; z-index:20; overflow-y:auto; }
+.am-panel { background:#fff; border-radius:16px; padding:18px 20px; width:min(640px, 100%); box-shadow:0 20px 60px rgba(15,23,42,.3); }
+.am-cabecera { display:flex; justify-content:space-between; align-items:center; }
+.am-cabecera h2 { margin:0; font-size:18px; }
+.am-cerrar { border:0; background:none; font-size:18px; cursor:pointer; color:var(--mute); }
+.am-codigo strong { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; font-size:28px; letter-spacing:.12em; }
+.am-codigo span { color:var(--mute); margin-left:10px; font-size:13px; }
+.am-comandos { background:#0d1017; color:#cdd3e0; border-radius:10px; padding:10px 12px; font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.am-lista { list-style:none; padding:0; margin:6px 0 0; }
+.am-lista li { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); }
+.am-lista li > span:first-child { flex:1; font-weight:600; min-width:0; overflow-wrap:anywhere; }
+.am-error, .en-error { color:#b42318; font-size:13px; }
+
+.en-pantalla { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; background:var(--bg); }
+.en-panel { background:#fff; border-radius:18px; padding:28px 26px; width:min(360px, 100%); box-shadow:0 10px 40px rgba(15,23,42,.12); display:flex; flex-direction:column; gap:10px; }
+.en-panel .logo { width:40px; height:40px; border-radius:10px; background:var(--blue); color:#fff; display:grid; place-items:center; font-weight:800; }
+.en-panel h1 { margin:0 0 6px; font-size:20px; }
+.en-panel label { font-size:13px; color:var(--mute); }
+.en-panel input { border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:15px; }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Agente, Instantanea, Proyecto } from '@centro/compartido'
+import type { Agente, Instantanea, MaquinaVista, Proyecto, RespuestaMaquinas } from '@centro/compartido'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { VistaGeneral } from '../../src/vistas/VistaGeneral.js'
@@ -76,9 +76,25 @@ function crearInstantanea(
   }
 }
 
+function maquina(instantanea: Instantanea | null, cambios: Partial<MaquinaVista> = {}): MaquinaVista {
+  return {
+    id: 'aaaaaaaaaaaa',
+    nombre: instantanea?.maquina.nombre ?? 'Mac de pruebas',
+    so: 'macos',
+    conectada: true,
+    ultimoLatidoMs: AHORA - 5_000,
+    instantanea,
+    ...cambios,
+  }
+}
+
+function local(datos: Instantanea): RespuestaMaquinas {
+  return { modo: 'local', maquinas: [maquina(datos)] }
+}
+
 function pintar(datos = crearInstantanea(), error = false) {
   return render(
-    <VistaGeneral datos={datos} error={error} actualizadaMs={datos.generadaMs} ahora={AHORA} />,
+    <VistaGeneral respuesta={local(datos)} error={error} actualizadaMs={datos.generadaMs} ahora={AHORA} />,
   )
 }
 
@@ -130,7 +146,7 @@ describe('VistaGeneral', () => {
 
     fireEvent.click(screen.getByTestId('tarjeta-proyecto-centro-agentes'))
 
-    expect(window.location.hash).toBe('#/proyecto/centro-agentes')
+    expect(window.location.hash).toBe('#/m/aaaaaaaaaaaa/proyecto/centro-agentes')
   })
 
   it('no muestra acciones de editor ni terminal todavía no disponibles', () => {
@@ -148,13 +164,53 @@ describe('VistaGeneral', () => {
       crearProyecto({ id: 'otro', nombre: 'otro-proyecto' }),
     ])
     rerender(
-      <VistaGeneral datos={datos} error={false} actualizadaMs={datos.generadaMs} ahora={AHORA} />,
+      <VistaGeneral respuesta={local(datos)} error={false} actualizadaMs={datos.generadaMs} ahora={AHORA} />,
     )
     expect(screen.getByText('· 2 proyectos')).toBeTruthy()
   })
   it('si la primera carga falla muestra el aviso de conexión en lugar de "Cargando…"', () => {
-    render(<VistaGeneral datos={null} error={true} actualizadaMs={null} ahora={AHORA} />)
+    render(<VistaGeneral respuesta={null} error={true} actualizadaMs={null} ahora={AHORA} />)
     expect(screen.getByText(/Sin conexión con el agente/)).toBeTruthy()
     expect(screen.queryByText('Cargando…')).toBeNull()
+  })
+  describe('varias máquinas', () => {
+    const mac = crearInstantanea([crearProyecto()], [crearAgente()])
+    const windows = crearInstantanea([crearProyecto({ id: 'pwin', nombre: 'proyecto-windows' })], [crearAgente({ id: 'codex:w', titulo: 'Tarea en Windows', proyectoIds: ['pwin'] })])
+    const hub: RespuestaMaquinas = {
+      modo: 'hub',
+      maquinas: [
+        maquina(mac, { id: 'aaaaaaaaaaaa', nombre: 'MacBook' }),
+        maquina(windows, { id: 'bbbbbbbbbbbb', nombre: 'Windows', so: 'windows', conectada: false, ultimoLatidoMs: AHORA - 120_000 }),
+        maquina(null, { id: 'cccccccccccc', nombre: 'Mac mini', conectada: false, ultimoLatidoMs: null }),
+      ],
+    }
+
+    it('pinta un bloque por máquina con su estado de conexión', () => {
+      render(<VistaGeneral respuesta={hub} error={false} actualizadaMs={AHORA} ahora={AHORA} />)
+      const bloques = document.querySelectorAll('.ma-bloque')
+      expect(bloques).toHaveLength(3)
+      expect(within(bloques[0] as HTMLElement).getByText('MacBook')).toBeTruthy()
+      expect(within(bloques[0] as HTMLElement).getByText(/Conectada/)).toBeTruthy()
+      expect(within(bloques[1] as HTMLElement).getByText(/Desconectada · último latido hace 2 min/)).toBeTruthy()
+      expect(within(bloques[2] as HTMLElement).getByText(/Todavía no se ha conectado/)).toBeTruthy()
+    })
+
+    it('En directo junta los agentes de todas las máquinas con su píldora y enlaces con máquina', () => {
+      const { container } = render(<VistaGeneral respuesta={hub} error={false} actualizadaMs={AHORA} ahora={AHORA} />)
+      const franja = container.querySelector('.ca-direct') as HTMLElement
+      expect(within(franja).getByText('MacBook')).toBeTruthy()
+      expect(within(franja).getByText('Windows')).toBeTruthy()
+      const enlaces = [...franja.querySelectorAll('a')].map((a) => a.getAttribute('href'))
+      expect(enlaces).toContain('#/m/bbbbbbbbbbbb/agente/codex%3Aw')
+      const tarjeta = container.querySelector('.ca-card-link') as HTMLElement
+      expect(tarjeta.getAttribute('href')).toMatch(/^#\/m\/aaaaaaaaaaaa\/proyecto\//)
+    })
+
+    it('muestra "Añadir máquina" solo en el hub', () => {
+      const { rerender } = render(<VistaGeneral respuesta={hub} error={false} actualizadaMs={AHORA} ahora={AHORA} />)
+      expect(screen.getByRole('button', { name: /Añadir máquina/ })).toBeTruthy()
+      rerender(<VistaGeneral respuesta={local(mac)} error={false} actualizadaMs={AHORA} ahora={AHORA} />)
+      expect(screen.queryByRole('button', { name: /Añadir máquina/ })).toBeNull()
+    })
   })
 })

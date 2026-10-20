@@ -1,10 +1,12 @@
 import type { Agente } from '@centro/compartido'
 import { etiquetaEstado, nombreModelo } from '../logica/formato.js'
 import { Avatar } from './Avatar.js'
+import { rutaAgente } from '../logica/rutas.js'
 
 type PropiedadesSesiones = {
   agentes: Agente[]
   proyectoId: string
+  maquinaId?: string | null
 }
 
 function claseEstado(agente: Agente): string {
@@ -13,7 +15,7 @@ function claseEstado(agente: Agente): string {
   return 'done'
 }
 
-export function Sesiones({ agentes, proyectoId }: PropiedadesSesiones) {
+export function Sesiones({ agentes, proyectoId, maquinaId = null }: PropiedadesSesiones) {
   const agentesDelProyecto = agentes.filter((agente) => agente.proyectoIds.includes(proyectoId))
 
   return (
@@ -21,7 +23,7 @@ export function Sesiones({ agentes, proyectoId }: PropiedadesSesiones) {
       <h2>Sesiones</h2>
       {agentesDelProyecto.map((agente) => {
         const esClaude = agente.tipo === 'claude'
-        const href = `#/agente/${encodeURIComponent(agente.id)}`
+        const href = rutaAgente(maquinaId, agente.id)
         return (
           <article className="cd-sess" key={agente.id}>
             <div className="h">

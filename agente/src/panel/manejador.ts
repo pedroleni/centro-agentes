@@ -1,7 +1,13 @@
-import path from 'node:path'
 import type { Commit, Instantanea } from '@centro/compartido'
 import type { ResultadoLinea } from '../linea.js'
-import { resolverEstatico, tipoContenido } from './estaticos.js'
+import {
+  decodificarRuta,
+  json,
+  manejarEstatico,
+  mensajeError,
+  respuesta,
+  type Respuesta,
+} from './respuestas.js'
 
 export type Peticion = {
   metodo: string
@@ -9,11 +15,7 @@ export type Peticion = {
   host: string | undefined
 }
 
-export type Respuesta = {
-  estado: number
-  cabeceras: Record<string, string>
-  cuerpo: string | Buffer
-}
+export type { Respuesta } from './respuestas.js'
 
 type DependenciasManejador = {
   puerto: number
@@ -24,52 +26,33 @@ type DependenciasManejador = {
   dirWeb: string
 }
 
-const CABECERAS_SEGURIDAD = {
-  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'",
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
-}
-
-function respuesta(
-  estado: number,
-  cuerpo: string | Buffer,
-  cabeceras: Record<string, string> = {},
-): Respuesta {
-  return {
-    estado,
-    cabeceras: { ...CABECERAS_SEGURIDAD, ...cabeceras },
-    cuerpo,
-  }
-}
-
-function json(estado: number, cuerpo: unknown): Respuesta {
-  return respuesta(estado, JSON.stringify(cuerpo), {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-  })
-}
-
-function mensajeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function decodificarRuta(url: string): string | null {
-  const sinQuery = url.split('?', 1)[0]
-  if (sinQuery === undefined) return null
-  try {
-    const decodificada = decodeURIComponent(sinQuery)
-    if (decodificada.includes('\0') || decodificada.includes('\\')) return null
-    return decodificada
-  } catch {
-    return null
-  }
-}
-
 async function manejarApi(
   dep: DependenciasManejador,
-  ruta: string,
+  rutaPedida: string,
   url: string,
 ): Promise<Respuesta> {
+  // Misma API que el hub (`/api/maquinas…`) para que el front sea uno solo. En modo
+  // local hay una única máquina y sus rutas delegan en las de siempre.
+  let ruta = rutaPedida
+  if (ruta === '/api/maquinas') {
+    try {
+      const instantanea = await dep.obtenerInstantanea()
+      const { id, nombre, so } = instantanea.maquina
+      return json(200, {
+        modo: 'local',
+        maquinas: [{ id, nombre, so, conectada: true, ultimoLatidoMs: instantanea.generadaMs, instantanea }],
+      })
+    } catch (error) {
+      return json(500, { error: mensajeError(error) })
+    }
+  }
+  const deMaquina = /^\/api\/maquinas\/([^/]+)(\/.+)$/.exec(ruta)
+  if (deMaquina) {
+    const instantanea = await dep.obtenerInstantanea().catch(() => null)
+    if (instantanea === null || deMaquina[1] !== instantanea.maquina.id) return json(404, { error: 'Máquina no encontrada' })
+    ruta = `/api${deMaquina[2] ?? ''}`
+  }
+
   if (ruta === '/api/instantanea') {
     try {
       return json(200, await dep.obtenerInstantanea())
@@ -117,50 +100,6 @@ function parametroAntes(url: string): number | null | undefined {
   }
   const numero = Number(valor)
   return Number.isSafeInteger(numero) ? numero : undefined
-}
-
-function cacheControl(rutaDecodificada: string, fallback: boolean): string {
-  if (fallback || rutaDecodificada === '/' || rutaDecodificada === '/index.html') {
-    return 'no-cache'
-  }
-  if (rutaDecodificada.startsWith('/assets/')) {
-    return 'public, max-age=31536000, immutable'
-  }
-  if (rutaDecodificada.startsWith('/agentes/')) return 'public, max-age=86400'
-  return 'no-cache'
-}
-
-async function manejarEstatico(
-  dep: DependenciasManejador,
-  url: string,
-  rutaDecodificada: string,
-): Promise<Respuesta> {
-  const ruta = resolverEstatico(dep.dirWeb, url)
-  if (ruta === null) return respuesta(404, 'No encontrado')
-
-  try {
-    const contenido = await dep.leerEstatico(ruta)
-    if (contenido !== null) {
-      return respuesta(200, contenido, {
-        'Content-Type': tipoContenido(ruta),
-        'Cache-Control': cacheControl(rutaDecodificada, false),
-      })
-    }
-
-    if (path.extname(rutaDecodificada) !== '') return respuesta(404, 'No encontrado')
-
-    const indice = resolverEstatico(dep.dirWeb, '/')
-    if (indice === null) return respuesta(404, 'No encontrado')
-    const contenidoIndice = await dep.leerEstatico(indice)
-    return contenidoIndice === null
-      ? respuesta(404, 'No encontrado')
-      : respuesta(200, contenidoIndice, {
-          'Content-Type': tipoContenido(indice),
-          'Cache-Control': cacheControl(rutaDecodificada, true),
-        })
-  } catch {
-    return respuesta(500, 'Error interno')
-  }
 }
 
 function sinCuerpoParaHead(peticion: Peticion, original: Respuesta): Respuesta {
