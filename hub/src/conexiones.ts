@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import {
+  CIERRE_TERMINAL,
   LIMITE_MENSAJE_BYTES,
   MensajeAgente,
   type Instantanea,
@@ -10,10 +11,15 @@ import {
 } from '@centro/compartido'
 
 // Registro de los agentes conectados al hub: guarda la última instantánea y el
-// último latido de cada máquina, y hace de puente para las peticiones de lectura
-// (commits y línea de tiempo) que el navegador pide a una máquina concreta.
+// último latido de cada máquina, hace de puente para las peticiones que el
+// navegador pide a una máquina concreta y lleva los canales de los terminales
+// abiertos en el navegador hasta el agente que los tiene.
 
 const LATIDO_MAXIMO_MS = 20_000
+const MAXIMO_CANALES_POR_MAQUINA = 16
+// Trozos de entrada de 16 K unidades UTF-16: como mucho 48 KiB en UTF-8, por
+// debajo de los 64 KiB que admite cada mensaje terminal-entrada.
+const TROZO_ENTRADA = 16 * 1024
 
 export type ConexionAgente = {
   enviar(mensaje: MensajeHub): void
@@ -28,11 +34,43 @@ export class SinRespuesta extends Error {
   constructor() { super('La máquina no responde') }
 }
 
+export class DemasiadosCanales extends Error {
+  constructor() { super('Demasiados terminales abiertos en esta máquina') }
+}
+
+// El lado del navegador de un canal: recibe la salida del terminal y su final.
+export type NavegadorCanal = {
+  datos(bytes: Buffer): void
+  fin(codigo: number, motivo: string): void
+}
+
+export type Canal = {
+  escribir(texto: string): void
+  redimensionar(cols: number, rows: number): void
+  soltar(): void
+}
+
 type Pendiente = {
   maquinaId: string
   resolver(datos: unknown): void
   rechazar(error: Error): void
   temporizador: ReturnType<typeof setTimeout>
+}
+
+type CanalAbierto = { maquinaId: string; navegador: NavegadorCanal }
+
+// Parte el texto sin separar los pares sustitutos, así cada trozo es UTF-8 válido.
+function trocear(texto: string): string[] {
+  const trozos: string[] = []
+  let inicio = 0
+  while (inicio < texto.length) {
+    let fin = Math.min(texto.length, inicio + TROZO_ENTRADA)
+    const ultimo = texto.charCodeAt(fin - 1)
+    if (fin < texto.length && ultimo >= 0xd800 && ultimo <= 0xdbff) fin -= 1
+    trozos.push(texto.slice(inicio, fin))
+    inicio = fin
+  }
+  return trozos
 }
 
 type DistribuirSinId<T> = T extends unknown ? Omit<T, 'id' | 'tipo'> : never
@@ -49,7 +87,10 @@ export function crearConexiones(ahora: () => number = Date.now) {
   const latidos = new Map<string, number>()
   const instantaneas = new Map<string, Instantanea>()
   const pendientes = new Map<string, Pendiente>()
+  const canales = new Map<string, CanalAbierto>()
 
+  // Cuando un agente se va, todo lo que esperaba algo de él termina: las
+  // peticiones con SinConexion y los terminales del navegador con 4502.
   function rechazarPendientes(maquinaId: string): void {
     for (const [id, pendiente] of pendientes) {
       if (pendiente.maquinaId !== maquinaId) continue
@@ -57,6 +98,17 @@ export function crearConexiones(ahora: () => number = Date.now) {
       pendientes.delete(id)
       pendiente.rechazar(new SinConexion())
     }
+    for (const [id, canal] of canales) {
+      if (canal.maquinaId !== maquinaId) continue
+      canales.delete(id)
+      canal.navegador.fin(CIERRE_TERMINAL.maquinaDesconectada, 'La máquina se ha desconectado')
+    }
+  }
+
+  // Solo la máquina que tiene el canal puede escribir en él.
+  function canalDe(maquinaId: string, id: string): CanalAbierto | null {
+    const canal = canales.get(id)
+    return canal !== undefined && canal.maquinaId === maquinaId ? canal : null
   }
 
   return {
@@ -88,6 +140,14 @@ export function crearConexiones(ahora: () => number = Date.now) {
       } else if (mensaje.tipo === 'instantanea') {
         latidos.set(maquinaId, ahora())
         instantaneas.set(maquinaId, mensaje.instantanea)
+      } else if (mensaje.tipo === 'terminal-salida') {
+        canalDe(maquinaId, mensaje.canal)?.navegador.datos(Buffer.from(mensaje.datos, 'base64'))
+      } else if (mensaje.tipo === 'terminal-fin') {
+        const canal = canalDe(maquinaId, mensaje.canal)
+        if (canal === null) return
+        canales.delete(mensaje.canal)
+        if (mensaje.motivo === 'no-encontrado') canal.navegador.fin(CIERRE_TERMINAL.noEncontrado, 'Terminal no encontrado')
+        else canal.navegador.fin(CIERRE_TERMINAL.terminada, 'La sesión ha terminado')
       } else if (mensaje.tipo === 'respuesta') {
         const pendiente = pendientes.get(mensaje.id)
         if (pendiente === undefined || pendiente.maquinaId !== maquinaId) return
@@ -116,6 +176,34 @@ export function crearConexiones(ahora: () => number = Date.now) {
         pendientes.set(id, { maquinaId, resolver, rechazar, temporizador })
         conexion.enviar({ ...peticion, tipo: 'peticion', id } as MensajeHub)
       })
+    },
+
+    abrirCanal(maquinaId: string, terminalId: string, tamano: { cols: number; rows: number }, navegador: NavegadorCanal): Canal {
+      const conexion = activas.get(maquinaId)
+      if (conexion === undefined) throw new SinConexion()
+      const abiertos = [...canales.values()].filter((canal) => canal.maquinaId === maquinaId).length
+      if (abiertos >= MAXIMO_CANALES_POR_MAQUINA) throw new DemasiadosCanales()
+      const id = randomBytes(8).toString('hex')
+      canales.set(id, { maquinaId, navegador })
+      conexion.enviar({ tipo: 'terminal-adjuntar', canal: id, terminalId, cols: tamano.cols, rows: tamano.rows })
+      // Tras soltar el canal o perder la máquina, lo que llegue del navegador se descarta.
+      const enviar = (mensaje: MensajeHub): void => {
+        if (canales.get(id)?.maquinaId === maquinaId) activas.get(maquinaId)?.enviar(mensaje)
+      }
+      return {
+        escribir(texto) {
+          for (const trozo of trocear(texto)) {
+            enviar({ tipo: 'terminal-entrada', canal: id, datos: Buffer.from(trozo, 'utf8').toString('base64') })
+          }
+        },
+        redimensionar(cols, rows) {
+          enviar({ tipo: 'terminal-tamano', canal: id, cols, rows })
+        },
+        soltar() {
+          enviar({ tipo: 'terminal-soltar', canal: id })
+          canales.delete(id)
+        },
+      }
     },
 
     vista(maquinas: { id: string; nombre: string; so: SO }[]): MaquinaVista[] {

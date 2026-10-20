@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import { Instantanea, Maquina, SO } from './esquemas.js'
 
-// Mensajes entre el agente de cada máquina y el hub. El hub solo puede pedir estas
-// dos operaciones de lectura: el agente nunca ejecuta nada por encargo del hub.
+// Mensajes entre el agente de cada máquina y el hub. El hub solo puede pedir dos
+// lecturas (commits y línea) y abrir, ver o cerrar terminales; para crear uno
+// manda ids, y el agente arma la orden con su lista cerrada (claude/codex en la
+// carpeta de un proyecto o sesión que conoce). Nunca ejecuta órdenes del hub.
 
 export const LIMITE_MENSAJE_BYTES = 8 * 1024 * 1024
 // 64 KiB de datos de terminal por mensaje, en base64.
@@ -16,8 +18,8 @@ const BASE64 = z.string().max(LIMITE_DATOS_TERMINAL_B64).regex(/^[A-Za-z0-9+/]*=
 export const MensajeAgente = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('hola'), maquina: Maquina, version: z.literal(1) }),
   z.object({ tipo: z.literal('instantanea'), instantanea: Instantanea }),
-  z.object({ tipo: z.literal('terminal-salida'), canal: z.string().min(1).max(64), datos: z.string().max(LIMITE_DATOS_TERMINAL_B64) }),
-  z.object({ tipo: z.literal('terminal-fin'), canal: z.string().min(1).max(64), motivo: z.string().max(200) }),
+  z.object({ tipo: z.literal('terminal-salida'), canal: CANAL, datos: BASE64 }),
+  z.object({ tipo: z.literal('terminal-fin'), canal: CANAL, motivo: z.string().max(200) }),
   z.object({
     tipo: z.literal('respuesta'),
     id: z.string().min(1),
@@ -106,4 +108,4 @@ export const MensajeNavegadorTerminal = z.discriminatedUnion('tipo', [
 export type MensajeNavegadorTerminal = z.infer<typeof MensajeNavegadorTerminal>
 
 // Códigos de cierre del WebSocket de un terminal hacia el navegador.
-export const CIERRE_TERMINAL = { terminada: 4000, noEncontrado: 4004, maquinaDesconectada: 4502 } as const
+export const CIERRE_TERMINAL = { terminada: 4000, sesionCaducada: 4401, noEncontrado: 4004, maquinaDesconectada: 4502 } as const

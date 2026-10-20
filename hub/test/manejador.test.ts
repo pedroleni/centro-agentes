@@ -122,6 +122,83 @@ describe('API del hub', () => {
     expect((await pedir({ url: '/api/maquinas/..%2F..%2Fx/proyectos/aaaaaaaaaaaa/commits', cookie })).estado).toBe(404)
   })
 
+  it('crea y cierra terminales a través del agente, con Origin propio y auditoría', async () => {
+    const { pedir, entrar, almacen, conexiones } = await preparar()
+    const cookie = await entrar()
+    const { maquinaId } = almacen.canjearCodigo(almacen.crearCodigoAlta().codigo, 'Mini', 'macos')!
+    const ruta = `/api/maquinas/${maquinaId}/terminales`
+    const continuar = JSON.stringify({ accion: 'continuar', agenteId: 'claude:abc' })
+    expect((await pedir({ metodo: 'POST', url: ruta, cookie, cuerpo: continuar })).estado).toBe(403)
+    expect((await pedir({ metodo: 'POST', url: ruta, cookie, origin: 'https://evil.com', cuerpo: continuar })).estado).toBe(403)
+    expect((await pedir({ metodo: 'POST', url: ruta, cookie, origin: ORIGEN, cuerpo: continuar })).estado).toBe(502)
+
+    const enviados: MensajeHub[] = []
+    conexiones.conectar(maquinaId, { enviar: (m) => { enviados.push(m) }, cerrar: () => {} })
+    const responder = (datos: unknown) => {
+      const { id } = enviados.at(-1) as { id: string }
+      conexiones.recibir(maquinaId, JSON.stringify({ tipo: 'respuesta', id, ok: true, datos }))
+    }
+    const terminal = { id: 'bbbbbbbbbbbb', titulo: 'Claude · web', tipo: 'claude', agenteId: 'claude:abc', proyectoId: null, creadoMs: 1 }
+
+    let promesa = pedir({ metodo: 'POST', url: ruta, cookie, origin: ORIGEN, cuerpo: continuar })
+    await Promise.resolve()
+    expect(enviados.at(-1)).toMatchObject({ tipo: 'peticion', op: 'terminal-crear', accion: 'continuar', agenteId: 'claude:abc' })
+    responder({ ok: true, terminal })
+    let r = await promesa
+    expect(r.estado).toBe(201)
+    expect(cuerpo(r)).toEqual(terminal)
+
+    promesa = pedir({ metodo: 'POST', url: ruta, cookie, origin: ORIGEN, cuerpo: JSON.stringify({ accion: 'nueva', tipo: 'codex', proyectoId: 'aaaaaaaaaaaa' }) })
+    await Promise.resolve()
+    expect(enviados.at(-1)).toMatchObject({ op: 'terminal-crear', accion: 'nueva', tipo_agente: 'codex', proyectoId: 'aaaaaaaaaaaa' })
+    responder({ ok: false, estado: 429, error: 'Ya hay 6 terminales abiertos en esta máquina' })
+    r = await promesa
+    expect(r.estado).toBe(429)
+    expect(cuerpo(r)).toEqual({ error: 'Ya hay 6 terminales abiertos en esta máquina' })
+
+    promesa = pedir({ metodo: 'DELETE', url: `${ruta}/bbbbbbbbbbbb`, cookie, origin: ORIGEN })
+    await Promise.resolve()
+    expect(enviados.at(-1)).toMatchObject({ op: 'terminal-cerrar', terminalId: 'bbbbbbbbbbbb' })
+    responder({ cerrado: true })
+    expect((await promesa).estado).toBe(204)
+
+    // Se audita cada intento que pasa las barreras, también el de la máquina desconectada.
+    const eventos = cuerpo(await pedir({ url: '/api/auditoria', cookie })) as { evento: string; detalle: Record<string, unknown> }[]
+    const terminales = eventos.filter((e) => e.evento.startsWith('terminal-'))
+    expect(terminales.map((e) => e.evento)).toEqual(['terminal-cerrar', 'terminal-crear', 'terminal-crear', 'terminal-crear'])
+    expect(terminales[0]?.detalle).toMatchObject({ maquinaId, terminalId: 'bbbbbbbbbbbb' })
+    expect(terminales[1]?.detalle).toMatchObject({ maquinaId, accion: 'nueva', tipo: 'codex', proyectoId: 'aaaaaaaaaaaa' })
+  })
+
+  it('no se fía de cuerpos mal formados ni de lo que conteste el agente sobre terminales', async () => {
+    const { pedir, entrar, almacen, conexiones } = await preparar()
+    const cookie = await entrar()
+    const { maquinaId } = almacen.canjearCodigo(almacen.crearCodigoAlta().codigo, 'Mini', 'macos')!
+    const ruta = `/api/maquinas/${maquinaId}/terminales`
+    const enviados: MensajeHub[] = []
+    conexiones.conectar(maquinaId, { enviar: (m) => { enviados.push(m) }, cerrar: () => {} })
+
+    const malo = JSON.stringify({ accion: 'ejecutar', comando: 'rm -rf /' })
+    expect((await pedir({ metodo: 'POST', url: ruta, cookie, origin: ORIGEN, cuerpo: malo })).estado).toBe(400)
+    expect((await pedir({ metodo: 'DELETE', url: `${ruta}/..%2F..`, cookie, origin: ORIGEN })).estado).toBe(404)
+    expect((await pedir({ metodo: 'DELETE', url: `${ruta}/XYZ`, cookie, origin: ORIGEN })).estado).toBe(404)
+    expect((await pedir({ metodo: 'GET', url: ruta, cookie })).estado).toBe(405)
+    expect(enviados).toEqual([])
+
+    const continuar = JSON.stringify({ accion: 'continuar', agenteId: 'claude:abc' })
+    for (const datos of [
+      { ok: false, estado: 200, error: 'Hecho' },
+      { ok: true, terminal: { id: '../../etc', titulo: 'x', tipo: 'claude', agenteId: null, proyectoId: null, creadoMs: 1 } },
+      'nada',
+    ]) {
+      const promesa = pedir({ metodo: 'POST', url: ruta, cookie, origin: ORIGEN, cuerpo: continuar })
+      await Promise.resolve()
+      const { id } = enviados.at(-1) as { id: string }
+      conexiones.recibir(maquinaId, JSON.stringify({ tipo: 'respuesta', id, ok: true, datos }))
+      expect((await promesa).estado).toBe(502)
+    }
+  })
+
   it('revoca una máquina, cierra su conexión con 4401 y exige Origin propio', async () => {
     const { pedir, entrar, almacen, conexiones } = await preparar()
     const cookie = await entrar()

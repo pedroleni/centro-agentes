@@ -49,11 +49,12 @@ async function servir(argumentos: string[]): Promise<void> {
   const cfg = await leerConfigHub(rutaConfig)
   const almacen = crearAlmacen(opcion(argumentos, '--datos') ?? path.join(path.dirname(rutaConfig), 'hub.sqlite'))
   const conexiones = crearConexiones()
+  const sesiones = crearSesiones()
   const raizRepo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
   const manejar = crearManejadorHub({
     cfg,
     almacen,
-    sesiones: crearSesiones(),
+    sesiones,
     limitador: crearLimitador(),
     conexiones,
     dirWeb: path.join(raizRepo, 'web', 'dist'),
@@ -65,7 +66,7 @@ async function servir(argumentos: string[]): Promise<void> {
       }
     },
   })
-  await arrancarHub({ cfg, almacen, conexiones, manejar })
+  await arrancarHub({ cfg, almacen, conexiones, sesiones, manejar })
   process.stdout.write(`Hub: http://127.0.0.1:${cfg.puerto}${cfg.hostPublico ? ` · https://${cfg.hostPublico}` : ''}\n`)
 }
 

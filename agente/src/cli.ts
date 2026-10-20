@@ -168,7 +168,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
 
   if (argumentos[0] === 'conectar') {
     const conexion = await leerConfigConexion(valorOpcion(opciones, '--conexion') ?? rutaConfigConexion())
-    const { cache, obtenerCommits, obtenerLinea } = crearDatos()
+    const { cache, gestor, obtenerCommits, obtenerLinea } = crearDatos()
     void cache.obtener().catch(() => undefined)
     const url = urlWebSocket(conexion.hub)
     crearConexionHub({
@@ -179,6 +179,11 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
       obtenerInstantanea: cache.obtener,
       obtenerCommits,
       obtenerLinea,
+      terminales: {
+        crear: async (pedido) => crearTerminalPedido(pedido, await cache.obtener(), gestor),
+        cerrar: (terminalId) => gestor.cerrar(terminalId),
+        adjuntar: gestor.adjuntar,
+      },
       crearSocket: (destino, token) =>
         new WebSocket(destino, { headers: { Authorization: `Bearer ${token}` } } as never) as unknown as SocketMinimo,
     }).arrancar()

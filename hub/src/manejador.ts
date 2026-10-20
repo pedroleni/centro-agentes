@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SO } from '@centro/compartido'
+import { SO, TerminalInfo } from '@centro/compartido'
 import {
   decodificarRuta,
   json,
@@ -45,6 +45,20 @@ type Dependencias = {
 const ID_HEX = /^[0-9a-f]{12}$/
 const Entrada = z.object({ contrasena: z.string().min(1).max(512) })
 const Alta = z.object({ codigo: z.string().min(1).max(32), nombre: z.string().min(1).max(80), so: SO })
+const PedidoTerminal = z.discriminatedUnion('accion', [
+  z.object({ accion: z.literal('continuar'), agenteId: z.string().min(1).max(200) }),
+  z.object({ accion: z.literal('nueva'), tipo: z.enum(['claude', 'codex']), proyectoId: z.string().regex(ID_HEX) }),
+])
+// Lo que contesta el agente al crear un terminal: se valida antes de dárselo al
+// navegador, y solo con estados de error conocidos.
+const ResultadoTerminal = z.union([
+  z.object({ ok: z.literal(true), terminal: TerminalInfo }),
+  z.object({
+    ok: z.literal(false),
+    estado: z.union([z.literal(400), z.literal(404), z.literal(409), z.literal(429), z.literal(500)]),
+    error: z.string().max(200),
+  }),
+])
 
 function leerJson<T>(esquema: z.ZodType<T>, cuerpo: string | null): T | null {
   if (cuerpo === null) return null
@@ -62,14 +76,27 @@ function rechazo(veredicto: 'host' | 'tailscale' | 'sin-sesion' | 'origen'): Res
   return json(403, { error: 'Origen no permitido' })
 }
 
-async function pedirAgente(dep: Dependencias, maquinaId: string, peticion: PeticionSinId): Promise<Respuesta> {
+async function pedirAgente(
+  dep: Dependencias,
+  maquinaId: string,
+  peticion: PeticionSinId,
+  responder: (datos: unknown) => Respuesta = (datos) => json(200, datos),
+): Promise<Respuesta> {
+  let datos: unknown
   try {
-    return json(200, await dep.conexiones.pedir(maquinaId, peticion))
+    datos = await dep.conexiones.pedir(maquinaId, peticion)
   } catch (error) {
     if (error instanceof SinConexion) return json(502, { error: error.message })
     if (error instanceof SinRespuesta) return json(504, { error: error.message })
     return json(404, { error: 'No encontrado' })
   }
+  return responder(datos)
+}
+
+function respuestaTerminal(datos: unknown): Respuesta {
+  const resultado = ResultadoTerminal.safeParse(datos)
+  if (!resultado.success) return json(502, { error: 'Respuesta no válida de la máquina' })
+  return resultado.data.ok ? json(201, resultado.data.terminal) : json(resultado.data.estado, { error: resultado.data.error })
 }
 
 // Rutas del hub. Todas pasan antes por las barreras de `evaluarPeticion` salvo dos:
@@ -158,6 +185,29 @@ export function crearManejadorHub(dep: Dependencias) {
       dep.conexiones.cerrarMaquina(id, 4401, 'Máquina revocada')
       dep.almacen.auditar('revocar', { maquinaId: id })
       return respuesta(204, '')
+    }
+
+    const terminales = /^\/api\/maquinas\/([^/]+)\/terminales$/.exec(ruta)
+    if (terminales) {
+      if (p.metodo !== 'POST') return respuesta(405, 'Metodo no permitido')
+      const maquinaId = terminales[1] ?? ''
+      if (!ID_HEX.test(maquinaId)) return json(404, { error: 'No encontrado' })
+      const pedido = leerJson(PedidoTerminal, p.cuerpo)
+      if (pedido === null) return json(400, { error: 'Petición no válida' })
+      dep.almacen.auditar('terminal-crear', { maquinaId, ip: p.ip, ...pedido })
+      const peticion: PeticionSinId = pedido.accion === 'continuar'
+        ? { op: 'terminal-crear', accion: 'continuar', agenteId: pedido.agenteId }
+        : { op: 'terminal-crear', accion: 'nueva', tipo_agente: pedido.tipo, proyectoId: pedido.proyectoId }
+      return pedirAgente(dep, maquinaId, peticion, respuestaTerminal)
+    }
+
+    const terminal = /^\/api\/maquinas\/([^/]+)\/terminales\/([^/]+)$/.exec(ruta)
+    if (terminal) {
+      if (p.metodo !== 'DELETE') return respuesta(405, 'Metodo no permitido')
+      const [, maquinaId = '', terminalId = ''] = terminal
+      if (!ID_HEX.test(maquinaId) || !ID_HEX.test(terminalId)) return json(404, { error: 'No encontrado' })
+      dep.almacen.auditar('terminal-cerrar', { maquinaId, terminalId, ip: p.ip })
+      return pedirAgente(dep, maquinaId, { op: 'terminal-cerrar', terminalId }, () => respuesta(204, ''))
     }
 
     const commits = /^\/api\/maquinas\/([^/]+)\/proyectos\/([^/]+)\/commits$/.exec(ruta)

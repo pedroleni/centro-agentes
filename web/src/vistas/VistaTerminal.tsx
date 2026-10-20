@@ -1,19 +1,18 @@
-import { CIERRE_TERMINAL } from '@centro/compartido'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { useEffect, useRef, useState } from 'react'
 import { cerrarTerminal } from '../api.js'
 import { conCtrl, secuenciaTecla, type Tecla } from '../logica/teclas.js'
+import { estadoTrasCierre, type EstadoTerminal } from '../logica/terminal.js'
 
-type Estado = 'conectando' | 'conectado' | 'reconectando' | 'terminado' | 'no-encontrado' | 'desconectada'
-
-const MENSAJES: Record<Exclude<Estado, 'conectado'>, string> = {
+const MENSAJES: Record<Exclude<EstadoTerminal, 'conectado'>, string> = {
   conectando: 'Conectando…',
   reconectando: 'Reconectando…',
   terminado: 'La sesión ha terminado',
   'no-encontrado': 'Este terminal ya no existe',
   desconectada: 'La máquina se ha desconectado',
+  'sin-sesion': 'Tu sesión ha caducado: vuelve a entrar',
 }
 
 const TECLAS: { tecla: Tecla; etiqueta: string }[] = [
@@ -39,7 +38,7 @@ export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: 
   const contenedor = useRef<HTMLDivElement>(null)
   const socket = useRef<WebSocket | null>(null)
   const ctrlActivo = useRef(false)
-  const [estado, establecerEstado] = useState<Estado>('conectando')
+  const [estado, establecerEstado] = useState<EstadoTerminal>('conectando')
   const [ctrl, establecerCtrl] = useState(false)
 
   function enviar(mensaje: object): void {
@@ -89,10 +88,9 @@ export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: 
       }
       ws.onclose = (evento) => {
         if (!vivo || socket.current !== ws) return
-        if (evento.code === CIERRE_TERMINAL.terminada) return establecerEstado('terminado')
-        if (evento.code === CIERRE_TERMINAL.noEncontrado) return establecerEstado('no-encontrado')
-        if (evento.code === CIERRE_TERMINAL.maquinaDesconectada) return establecerEstado('desconectada')
-        establecerEstado('reconectando')
+        const siguiente = estadoTrasCierre(evento.code)
+        establecerEstado(siguiente)
+        if (siguiente !== 'reconectando') return
         reintento = setTimeout(conectar, ESPERAS_MS[Math.min(intento, ESPERAS_MS.length - 1)])
         intento += 1
       }
@@ -135,7 +133,7 @@ export function VistaTerminal({ maquinaId, maquinaNombre, terminalId, titulo }: 
       </header>
       <p className="vt-aviso">Sesión real en {maquinaNombre} · lo que escribas se ejecuta allí</p>
       <div className="vt-terminal" ref={contenedor} />
-      {(estado === 'terminado' || estado === 'no-encontrado' || estado === 'desconectada') && (
+      {(estado === 'terminado' || estado === 'no-encontrado' || estado === 'desconectada' || estado === 'sin-sesion') && (
         <p className="vt-fin" role="status">{MENSAJES[estado]} · <a href="#/">Volver al panel</a></p>
       )}
       <nav className="vt-teclas" aria-label="Teclas especiales">
