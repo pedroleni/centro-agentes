@@ -6,3 +6,4 @@ agente.config.json
 centro-agentes.config.json
 dist/
 node_modules/
+web/dist/

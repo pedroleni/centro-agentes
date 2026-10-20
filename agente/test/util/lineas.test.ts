@@ -80,4 +80,21 @@ describe('leerLineasDesde', () => {
       { linea: 'fin', finByte: 65_542 },
     ])
   })
+  it('corta la página por tamaño aunque no llegue a n líneas, sin quedarse sin avanzar', async () => {
+    const directorio = await mkdtemp(path.join(tmpdir(), 'centro-lineas-bytes-'))
+    const ruta = path.join(directorio, 'grande.jsonl')
+    const linea = 'x'.repeat(100_000)
+    await writeFile(ruta, `${Array.from({ length: 50 }, () => linea).join('\n')}\n`)
+
+    const pagina = await ultimasLineas(ruta, 200, undefined, 1_000_000)
+    expect(pagina.lineas.length).toBeGreaterThan(0)
+    expect(pagina.lineas.length).toBeLessThanOrEqual(11)
+    expect(pagina.desdeByte).toBeGreaterThan(0)
+
+    const enorme = path.join(directorio, 'enorme.jsonl')
+    await writeFile(enorme, `${'y'.repeat(3_000_000)}\n${'z'.repeat(10)}\n`)
+    const unaSola = await ultimasLineas(enorme, 200, 3_000_001, 1_000_000)
+    expect(unaSola.lineas).toHaveLength(1)
+    await rm(directorio, { recursive: true, force: true })
+  })
 })

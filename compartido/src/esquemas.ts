@@ -51,11 +51,55 @@ export const EstadoAgente = z.enum([
 ])
 export type EstadoAgente = z.infer<typeof EstadoAgente>
 
+export const Rol = z.enum([
+  'claude',
+  'claude-explorador',
+  'claude-arquitecto',
+  'claude-inspector',
+  'claude-ayudante',
+  'codex',
+  'codex-obrero',
+  'codex-guardian',
+])
+export type Rol = z.infer<typeof Rol>
+
+export const Accion = z.object({
+  tipo: z.enum([
+    'comando',
+    'edicion',
+    'lectura',
+    'busqueda',
+    'subagente',
+    'pregunta',
+    'mensaje',
+    'otro',
+  ]),
+  texto: z.string(),
+  fechaMs: z.number(),
+})
+export type Accion = z.infer<typeof Accion>
+
+export const ResumenActividad = z.object({
+  comandos: z.number().int(),
+  ediciones: z.number().int(),
+  mensajes: z.number().int(),
+  ficheros: z.array(z.string()).max(6),
+})
+export type ResumenActividad = z.infer<typeof ResumenActividad>
+
 export const TareaSesion = z.object({
   texto: z.string(),
   estado: z.enum(['pendiente', 'en-curso', 'hecha']),
 })
 export type TareaSesion = z.infer<typeof TareaSesion>
+
+export const Commit = z.object({
+  hash: z.string(),
+  mensaje: z.string(),
+  fechaMs: z.number(),
+  autor: z.string(),
+})
+export type Commit = z.infer<typeof Commit>
 
 export const Agente = z.object({
   id: z.string(),
@@ -65,6 +109,9 @@ export const Agente = z.object({
   cwd: z.string(),
   proyectoIds: z.array(z.string()),
   estado: EstadoAgente,
+  rol: Rol,
+  ultimaAccion: Accion.nullable(),
+  resumenActividad: ResumenActividad,
   modelo: z.string().nullable(),
   esfuerzo: z.string().nullable(),
   contexto: z.object({ usados: z.number(), ventana: z.number().nullable() }).nullable(),
@@ -78,6 +125,7 @@ export const Agente = z.object({
   entrada: z.string().nullable(),
   puedeContinuar: z.boolean(),
   tareas: z.array(TareaSesion),
+  commitsPorProyecto: z.record(z.string(), z.array(z.number())),
 })
 export type Agente = z.infer<typeof Agente>
 

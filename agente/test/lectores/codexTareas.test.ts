@@ -28,7 +28,11 @@ describe('leerTareasCodex', () => {
         { type: 'task_meta', effort: 'medium', model: 'gpt-5.6-sol', prompt: 'Implementa' },
         { type: 'thread.started', thread_id: 'hilo-123' },
         { type: 'item.completed', item: { type: 'agent_message', text: 'Primero' } },
-        { type: 'item.completed', item: { type: 'command_execution', text: 'ignorar' } },
+        { type: 'item.completed', item: { type: 'command_execution', command: 'npm test' } },
+        {
+          type: 'item.completed',
+          item: { type: 'file_change', changes: [{ path: '/repo/src/actividad.ts' }] },
+        },
         { type: 'item.completed', item: { type: 'agent_message', text: 'Terminado' } },
         { type: 'turn.completed', usage: { input_tokens: 10 } },
       ]
@@ -48,7 +52,38 @@ describe('leerTareasCodex', () => {
       ultimoMensaje: 'Terminado',
       completada: true,
       mtimeMs: expect.any(Number),
+      ultimaAccion: {
+        tipo: 'mensaje',
+        texto: 'Terminado',
+        fechaMs: expect.any(Number),
+      },
+      resumenActividad: {
+        comandos: 1,
+        ediciones: 1,
+        mensajes: 2,
+        ficheros: ['actividad.ts'],
+      },
     })
+  })
+
+  it('convierte file_change en una última acción de edición', async () => {
+    const proyecto = await crearDirectorioTemporal()
+    const directorioLogs = path.join(proyecto, '.codex-logs')
+    await mkdir(directorioLogs)
+    await writeFile(
+      path.join(directorioLogs, 'cambio.jsonl'),
+      [
+        { type: 'task_meta', effort: 'high', model: 'gpt-5.6', prompt: 'Edita' },
+        {
+          type: 'item.completed',
+          item: { type: 'file_change', changes: [{ path: '/repo/src/uno.ts' }] },
+        },
+      ].map((objeto) => JSON.stringify(objeto)).join('\n') + '\n',
+    )
+
+    const [tarea] = await leerTareasCodex(proyecto)
+
+    expect(tarea?.ultimaAccion).toMatchObject({ tipo: 'edicion', texto: 'uno.ts' })
   })
 
   it('devuelve una lista vacia si no existe el directorio de logs', async () => {

@@ -1,7 +1,14 @@
 import type { Dirent } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import path from 'node:path'
-import type { TareaSesion } from '@centro/compartido'
+import type { Accion, ResumenActividad, TareaSesion } from '@centro/compartido'
+import {
+  accionDeToolUse,
+  normalizarTextoAccion,
+  registrarActividad,
+  resumenActividadVacio,
+} from '../actividad.js'
 import { crearLectorIncremental } from '../util/incremental.js'
 
 export type ResumenClaude = {
@@ -18,6 +25,14 @@ export type ResumenClaude = {
   ultimaActividadMs: number | null
   tareas: TareaSesion[]
   ficherosEditados: string[]
+  commits: { fechaMs: number; dir: string }[]
+  ultimaAccion: Accion | null
+  resumenActividad: ResumenActividad
+}
+
+export type MetaSubagente = {
+  agentType: string | null
+  descripcion: string | null
 }
 
 export type TranscriptEncontrado = {
@@ -63,17 +78,141 @@ function mapearTareas(valor: unknown): TareaSesion[] {
   return tareas
 }
 
-function aplicarHerramienta(estado: EstadoResumen, valor: unknown): void {
+function dividirComandos(comando: string): string[] {
+  const partes: string[] = []
+  let inicio = 0
+  let comilla: '"' | "'" | null = null
+  let escapado = false
+  for (let indice = 0; indice < comando.length; indice += 1) {
+    const caracter = comando[indice]
+    if (escapado) {
+      escapado = false
+      continue
+    }
+    if (caracter === '\\' && comilla !== "'") {
+      escapado = true
+      continue
+    }
+    if (caracter === '"' || caracter === "'") {
+      comilla = comilla === caracter ? null : comilla ?? caracter
+      continue
+    }
+    if (comilla !== null) continue
+    const esSeparador = caracter === ';' || caracter === '\n' || caracter === '|'
+      || (caracter === '&' && comando[indice + 1] === '&')
+    if (!esSeparador) continue
+    partes.push(comando.slice(inicio, indice))
+    if ((caracter === '|' || caracter === '&') && comando[indice + 1] === caracter) indice += 1
+    inicio = indice + 1
+  }
+  partes.push(comando.slice(inicio))
+  return partes
+}
+
+function tokenizar(comando: string): string[] {
+  const tokens: string[] = []
+  let actual = ''
+  let comilla: '"' | "'" | null = null
+  let escapado = false
+  for (const caracter of comando.trim()) {
+    if (escapado) {
+      actual += caracter
+      escapado = false
+      continue
+    }
+    if (caracter === '\\' && comilla !== "'") {
+      escapado = true
+      continue
+    }
+    if (caracter === '"' || caracter === "'") {
+      comilla = comilla === caracter ? null : comilla ?? caracter
+      continue
+    }
+    if (/\s/.test(caracter) && comilla === null) {
+      if (actual.length > 0) tokens.push(actual)
+      actual = ''
+      continue
+    }
+    actual += caracter
+  }
+  if (escapado) actual += '\\'
+  if (actual.length > 0) tokens.push(actual)
+  return tokens
+}
+
+function resolverDirectorio(ruta: string, base: string, home: string): string {
+  const expandida = ruta === '~'
+    ? home
+    : ruta.startsWith('~/') || ruta.startsWith('~\\')
+      ? path.join(home, ruta.slice(2))
+      : ruta
+  return path.isAbsolute(expandida) ? path.normalize(expandida) : path.resolve(base, expandida)
+}
+
+function directoriosDeCommits(comando: string, cwd: string, home: string): string[] {
+  let directorioActual = cwd
+  const directorios: string[] = []
+  for (const parte of dividirComandos(comando)) {
+    const tokens = tokenizar(parte)
+    if (tokens.length === 0) continue
+    if (tokens[0] === 'cd') {
+      const indiceRuta = tokens[1] === '--' ? 2 : 1
+      directorioActual = resolverDirectorio(tokens[indiceRuta] ?? '~', directorioActual, home)
+      continue
+    }
+
+    const indiceGit = tokens.indexOf('git')
+    if (indiceGit < 0) continue
+    let directorioGit = directorioActual
+    let indice = indiceGit + 1
+    while (indice < tokens.length) {
+      const token = tokens[indice]
+      if (token === '-C') {
+        const ruta = tokens[indice + 1]
+        if (ruta === undefined) break
+        directorioGit = resolverDirectorio(ruta, directorioActual, home)
+        indice += 2
+        continue
+      }
+      if (token?.startsWith('-C') && token.length > 2) {
+        directorioGit = resolverDirectorio(token.slice(2), directorioActual, home)
+        indice += 1
+        continue
+      }
+      if (token?.startsWith('-')) {
+        indice += 1
+        continue
+      }
+      if (token === 'commit') directorios.push(directorioGit)
+      break
+    }
+  }
+  return directorios
+}
+
+function actualizarUltimaAccion(estado: EstadoResumen, accion: Accion): void {
+  if (estado.ultimaAccion === null || accion.fechaMs >= estado.ultimaAccion.fechaMs) {
+    estado.ultimaAccion = accion
+  }
+}
+
+function aplicarHerramienta(estado: EstadoResumen, valor: unknown, fechaMs: number | null): void {
   if (!esRegistro(valor) || valor.type !== 'tool_use' || typeof valor.name !== 'string') return
-  if (!esRegistro(valor.input)) return
+  const input = esRegistro(valor.input) ? valor.input : {}
+
+  if (fechaMs !== null) {
+    const accion = accionDeToolUse(valor.name, input, fechaMs)
+    actualizarUltimaAccion(estado, accion)
+    registrarActividad(estado.resumenActividad, accion)
+  }
 
   if (valor.name === 'TodoWrite') {
-    estado.tareas = mapearTareas(valor.input.todos)
+    estado.tareas = mapearTareas(input.todos)
     return
   }
 
   if (!['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(valor.name)) return
-  const ruta = valor.input.file_path ?? valor.input.notebook_path
+  const ruta = input.file_path ?? input.notebook_path
   if (typeof ruta === 'string' && !estado.ficherosEditados.includes(ruta)) {
     estado.ficherosEditados.push(ruta)
   }
@@ -92,10 +231,13 @@ function estadoInicial(): EstadoResumen {
     ultimaActividadMs: null,
     tareas: [],
     ficherosEditados: [],
+    commits: [],
+    ultimaAccion: null,
+    resumenActividad: resumenActividadVacio(),
   }
 }
 
-function aplicarLinea(estado: EstadoResumen, valor: unknown): void {
+function aplicarLinea(estado: EstadoResumen, valor: unknown, home: string): void {
   if (!esRegistro(valor)) return
 
   if (valor.type === 'ai-title' && typeof valor.aiTitle === 'string') {
@@ -137,7 +279,50 @@ function aplicarLinea(estado: EstadoResumen, valor: unknown): void {
       numeroUso(mensaje.usage, 'cache_read_input_tokens')
   }
   if (Array.isArray(mensaje.content)) {
-    for (const contenido of mensaje.content) aplicarHerramienta(estado, contenido)
+    for (const contenido of mensaje.content) {
+      aplicarHerramienta(estado, contenido, fechaMs)
+      if (
+        esRegistro(contenido) &&
+        contenido.type === 'text' &&
+        typeof contenido.text === 'string' &&
+        fechaMs !== null
+      ) {
+        const accion: Accion = {
+          tipo: 'mensaje',
+          texto: normalizarTextoAccion(contenido.text),
+          fechaMs,
+        }
+        actualizarUltimaAccion(estado, accion)
+        registrarActividad(estado.resumenActividad, accion)
+      }
+      if (
+        esRegistro(contenido) &&
+        contenido.type === 'tool_use' &&
+        contenido.name === 'Bash' &&
+        esRegistro(contenido.input) &&
+        typeof contenido.input.command === 'string' &&
+        fechaMs !== null
+      ) {
+        const cwdLinea = typeof valor.cwd === 'string' ? valor.cwd : estado.cwd
+        if (cwdLinea !== null) {
+          for (const dir of directoriosDeCommits(
+            contenido.input.command,
+            cwdLinea,
+            home,
+          )) {
+            estado.commits.push({ fechaMs, dir })
+          }
+        }
+      }
+    }
+  } else if (typeof mensaje.content === 'string' && fechaMs !== null) {
+    const accion: Accion = {
+      tipo: 'mensaje',
+      texto: normalizarTextoAccion(mensaje.content),
+      fechaMs,
+    }
+    actualizarUltimaAccion(estado, accion)
+    registrarActividad(estado.resumenActividad, accion)
   }
 }
 
@@ -153,8 +338,10 @@ function idsTranscript(ruta: string): { sessionId: string; agenteSubId: string |
   return { sessionId: path.basename(nombre, '.jsonl'), agenteSubId: null }
 }
 
-export function crearLectorClaude(): { resumen(ruta: string): Promise<ResumenClaude> } {
-  const lector = crearLectorIncremental(estadoInicial, aplicarLinea)
+export function crearLectorClaude(home = homedir()): { resumen(ruta: string): Promise<ResumenClaude> } {
+  const lector = crearLectorIncremental(estadoInicial, (estado, valor) => {
+    aplicarLinea(estado, valor, home)
+  })
 
   return {
     async resumen(ruta: string): Promise<ResumenClaude> {
@@ -165,8 +352,27 @@ export function crearLectorClaude(): { resumen(ruta: string): Promise<ResumenCla
         pr: estado.pr === null ? null : { ...estado.pr },
         tareas: estado.tareas.map((tarea) => ({ ...tarea })),
         ficherosEditados: [...estado.ficherosEditados],
+        commits: estado.commits.map((commit) => ({ ...commit })),
+        ultimaAccion: estado.ultimaAccion === null ? null : { ...estado.ultimaAccion },
+        resumenActividad: {
+          ...estado.resumenActividad,
+          ficheros: [...estado.resumenActividad.ficheros],
+        },
       }
     },
+  }
+}
+
+export async function leerMetaSubagente(ruta: string): Promise<MetaSubagente> {
+  try {
+    const valor = JSON.parse(await readFile(ruta, 'utf8')) as unknown
+    if (!esRegistro(valor)) return { agentType: null, descripcion: null }
+    return {
+      agentType: typeof valor.agentType === 'string' ? valor.agentType : null,
+      descripcion: typeof valor.description === 'string' ? valor.description : null,
+    }
+  } catch {
+    return { agentType: null, descripcion: null }
   }
 }
 
@@ -236,5 +442,14 @@ export async function listarTranscripts(
     }
   }
 
-  return encontrados.sort((a, b) => a.ruta.localeCompare(b.ruta))
+  const masRecientePorSesion = new Map<string, TranscriptEncontrado>()
+  for (const encontrado of encontrados) {
+    const clave = `${encontrado.sessionId}\0${encontrado.agenteSubId ?? ''}`
+    const actual = masRecientePorSesion.get(clave)
+    if (actual === undefined || encontrado.mtimeMs > actual.mtimeMs) {
+      masRecientePorSesion.set(clave, encontrado)
+    }
+  }
+
+  return [...masRecientePorSesion.values()].sort((a, b) => a.ruta.localeCompare(b.ruta))
 }

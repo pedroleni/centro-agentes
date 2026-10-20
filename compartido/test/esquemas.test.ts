@@ -47,6 +47,9 @@ const ejemploValido = {
       cwd: '/tmp/Centro',
       proyectoIds: ['proyecto-1'],
       estado: 'trabajando' as const,
+      rol: 'claude' as const,
+      ultimaAccion: { tipo: 'comando' as const, texto: 'npm test', fechaMs: 1_700_000_000_000 },
+      resumenActividad: { comandos: 1, ediciones: 0, mensajes: 0, ficheros: [] },
       modelo: 'claude-opus-5',
       esfuerzo: null,
       contexto: { usados: 100, ventana: 1_000_000 },
@@ -60,6 +63,7 @@ const ejemploValido = {
       entrada: null,
       puedeContinuar: true,
       tareas: [{ texto: 'Probar', estado: 'pendiente' as const }],
+      commitsPorProyecto: {},
     },
   ],
 }

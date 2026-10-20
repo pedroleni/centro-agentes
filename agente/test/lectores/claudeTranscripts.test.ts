@@ -24,6 +24,76 @@ afterEach(async () => {
 })
 
 describe('crearLectorClaude', () => {
+  it('atribuye git commit al último cd del mismo comando, incluidas rutas con espacios', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'sesion-cd.jsonl')
+    const fecha = '2026-10-19T09:00:00.000Z'
+    await writeFile(ruta, jsonl([{
+      type: 'assistant',
+      cwd: '/r/a',
+      timestamp: fecha,
+      message: {
+        content: [{
+          type: 'tool_use',
+          name: 'Bash',
+          input: { command: 'cd "/r/Proyectos IA/b" && git add . && git commit -m x' },
+        }],
+      },
+    }]))
+
+    const resumen = await crearLectorClaude('/r').resumen(ruta)
+
+    expect(resumen.commits).toEqual([
+      { fechaMs: Date.parse(fecha), dir: '/r/Proyectos IA/b' },
+    ])
+  })
+
+  it.each([
+    ['cd ~/Desktop/"Proyectos IA"/centro-agentes && git commit -m x'],
+    ["cd ~/Desktop/'Proyectos IA'/centro-agentes && git commit -m x"],
+  ])('interpreta comillas parciales y ~ al atribuir un commit: %s', async (command) => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'sesion-home.jsonl')
+    const fecha = '2026-10-19T09:00:00.000Z'
+    await writeFile(ruta, jsonl([{
+      type: 'assistant',
+      cwd: '/otro',
+      timestamp: fecha,
+      message: {
+        content: [{ type: 'tool_use', name: 'Bash', input: { command } }],
+      },
+    }]))
+
+    const resumen = await crearLectorClaude('/home/pedro').resumen(ruta)
+
+    expect(resumen.commits).toEqual([{
+      fechaMs: Date.parse(fecha),
+      dir: '/home/pedro/Desktop/Proyectos IA/centro-agentes',
+    }])
+  })
+
+  it('da prioridad a la carpeta indicada con git -C', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'sesion-c.jsonl')
+    const fecha = '2026-10-19T09:00:00.000Z'
+    await writeFile(ruta, jsonl([{
+      type: 'assistant',
+      cwd: '/r/a',
+      timestamp: fecha,
+      message: {
+        content: [{
+          type: 'tool_use',
+          name: 'Bash',
+          input: { command: 'git -C /r/b commit -m x' },
+        }],
+      },
+    }]))
+
+    const resumen = await crearLectorClaude('/r').resumen(ruta)
+
+    expect(resumen.commits).toEqual([{ fechaMs: Date.parse(fecha), dir: '/r/b' }])
+  })
+
   it('resume los tipos reales del transcript y conserva los ultimos valores', async () => {
     const directorio = await crearDirectorioTemporal()
     const ruta = path.join(directorio, 'sesion-1.jsonl')
@@ -58,6 +128,7 @@ describe('crearLectorClaude', () => {
                   todos: [{ content: 'Lista anterior', status: 'pending' }],
                 },
               },
+              { type: 'tool_use', name: 'Bash', input: { command: 'git status' } },
             ],
           },
           cwd: '/otra/ruta/que/no-gana',
@@ -89,6 +160,11 @@ describe('crearLectorClaude', () => {
               { type: 'tool_use', name: 'Edit', input: { file_path: '/repo/a.ts' } },
               { type: 'tool_use', name: 'Edit', input: { file_path: '/repo/a.ts' } },
               { type: 'tool_use', name: 'Write', input: { file_path: '/repo/b.ts' } },
+              {
+                type: 'tool_use',
+                name: 'Bash',
+                input: { command: 'git add . && git commit -m "x"' },
+              },
             ],
           },
           gitBranch: 'tarea/seis',
@@ -116,6 +192,52 @@ describe('crearLectorClaude', () => {
         { texto: 'Terminada', estado: 'hecha' },
       ],
       ficherosEditados: ['/repo/a.ts', '/repo/b.ts'],
+      commits: [{
+        fechaMs: Date.parse('2026-10-19T09:00:00.000Z'),
+        dir: '/Proyectos IA/Año ñ',
+      }],
+      ultimaAccion: {
+        tipo: 'comando',
+        texto: 'git add . && git commit -m "x"',
+        fechaMs: Date.parse('2026-10-19T09:00:00.000Z'),
+      },
+      resumenActividad: {
+        comandos: 2,
+        ediciones: 3,
+        mensajes: 0,
+        ficheros: ['b.ts', 'a.ts'],
+      },
+    })
+  })
+
+  it('prefiere el texto posterior del asistente como última acción y cuenta la actividad', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'sesion-actividad.jsonl')
+    await writeFile(ruta, jsonl([
+      {
+        type: 'assistant',
+        timestamp: '2026-10-19T09:00:00.000Z',
+        message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'npm test' } }] },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-10-19T09:01:00.000Z',
+        message: { content: [{ type: 'text', text: 'Las pruebas han terminado.' }] },
+      },
+    ]))
+
+    const resumen = await crearLectorClaude('/home/pedro').resumen(ruta)
+
+    expect(resumen.ultimaAccion).toEqual({
+      tipo: 'mensaje',
+      texto: 'Las pruebas han terminado.',
+      fechaMs: Date.parse('2026-10-19T09:01:00.000Z'),
+    })
+    expect(resumen.resumenActividad).toEqual({
+      comandos: 1,
+      ediciones: 0,
+      mensajes: 1,
+      ficheros: [],
     })
   })
 
@@ -137,6 +259,29 @@ describe('crearLectorClaude', () => {
 })
 
 describe('listarTranscripts', () => {
+  it('conserva solo la copia mas reciente de una sesion movida entre carpetas', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const antigua = path.join(directorio, '-Users-p-Antiguo', 'sid.jsonl')
+    const reciente = path.join(directorio, '-Users-p-Nuevo', 'sid.jsonl')
+    await mkdir(path.dirname(antigua), { recursive: true })
+    await mkdir(path.dirname(reciente), { recursive: true })
+    await writeFile(antigua, jsonl([{ type: 'ai-title', aiTitle: 'Titulo antiguo' }]))
+    await writeFile(reciente, jsonl([{ type: 'ai-title', aiTitle: 'Titulo reciente' }]))
+
+    const baseMs = Date.parse('2026-10-19T08:00:00.000Z')
+    await utimes(antigua, baseMs / 1_000, baseMs / 1_000)
+    await utimes(reciente, (baseMs + 5_000) / 1_000, (baseMs + 5_000) / 1_000)
+
+    const encontrados = await listarTranscripts(directorio, 0)
+
+    expect(encontrados).toHaveLength(1)
+    expect(encontrados[0]?.ruta).toBe(reciente)
+    await expect(crearLectorClaude().resumen(encontrados[0]!.ruta)).resolves.toMatchObject({
+      sessionId: 'sid',
+      titulo: 'Titulo reciente',
+    })
+  })
+
   it('lista sesiones y subagentes recientes con el id de la sesion padre', async () => {
     const directorio = await crearDirectorioTemporal()
     const proyecto = path.join(directorio, '-Users-p-Proyectos-IA')
