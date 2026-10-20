@@ -1,0 +1,11 @@
+{
+  "name": "@centro/hub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@centro/agente": "*",
+    "@centro/compartido": "*",
+    "ws": "^8.22.0"
+  }
+}
