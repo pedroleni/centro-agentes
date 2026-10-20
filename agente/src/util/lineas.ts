@@ -53,6 +53,7 @@ export async function ultimasLineas(
   ruta: string,
   n: number,
   antesDeByte?: number,
+  maximoBytes = Number.POSITIVE_INFINITY,
 ): Promise<{ lineas: string[]; desdeByte: number }> {
   const fichero = await open(ruta, 'r')
 
@@ -65,7 +66,13 @@ export async function ultimasLineas(
     let inicioLeido = limite
     let saltos = 0
 
-    while (inicioLeido > 0 && saltos < n + 1) {
+    // Se para al tener n líneas o, si las líneas son enormes, al pasar de
+    // `maximoBytes`, pero siempre con al menos una línea completa para avanzar.
+    while (
+      inicioLeido > 0 &&
+      saltos < n + 1 &&
+      !(limite - inicioLeido >= maximoBytes && saltos >= 2)
+    ) {
       const longitud = Math.min(TAMANO_BLOQUE, inicioLeido)
       const posicion = inicioLeido - longitud
       const bloque = Buffer.allocUnsafe(longitud)

@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 describe('usarInstantanea', () => {
-  it('marca error a los 8 segundos si fetch no responde', async () => {
+  it('marca error a los 30 segundos si la instantánea no responde (en frío tarda ~8 s)', async () => {
     vi.useFakeTimers()
     const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milisegundos) => {
       const controlador = new AbortController()
@@ -25,11 +25,11 @@ describe('usarInstantanea', () => {
     const { result } = renderHook(() => usarInstantanea())
     expect(result.current.error).toBe(false)
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(7_999) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(29_999) })
     expect(result.current.error).toBe(false)
 
     await act(async () => { await vi.advanceTimersByTimeAsync(1) })
     expect(result.current.error).toBe(true)
-    expect(timeout).toHaveBeenCalledWith(8_000)
+    expect(timeout).toHaveBeenCalledWith(30_000)
   })
 })

@@ -281,3 +281,15 @@ button, input { font:inherit; }
   .ca-st.run i, .ca-live i.ca-live-pulse, .av-trabaja, .av-trabaja::after, .av-espera, .da-estado.run i { animation:none; }
   .ca-card-clickable, .ca-direct-card { transition:none; }
 }
+
+/* Markdown de los mensajes de la línea de tiempo */
+.md { min-width:0; overflow-wrap:anywhere; }
+.md p { margin:0 0 6px; }
+.md p:last-child, .md ul:last-child, .md ol:last-child, .md pre:last-child { margin-bottom:0; }
+.md ul, .md ol { margin:0 0 6px; padding-left:20px; }
+.md li { margin:2px 0; }
+.md code { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; font-size:.92em; background:rgba(15,23,42,.06); border-radius:5px; padding:1px 5px; }
+.md pre { background:#0d1017; color:#cdd3e0; border-radius:8px; padding:8px 10px; overflow-x:auto; margin:0 0 6px; }
+.md pre code { background:none; padding:0; color:inherit; }
+.md a { color:var(--blue); }
+.md-titulo { margin-top:4px; }

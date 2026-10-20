@@ -2,9 +2,12 @@ import { Commit, Instantanea } from '@centro/compartido'
 import { z } from 'zod'
 
 const TIEMPO_LIMITE_MS = 8_000
+// La primera instantánea tras arrancar el agente lee los transcripts enteros y
+// puede tardar varios segundos con transcripts de cientos de MB.
+const TIEMPO_LIMITE_INSTANTANEA_MS = 30_000
 
-function opcionesPeticion(): RequestInit {
-  return { signal: AbortSignal.timeout(TIEMPO_LIMITE_MS) }
+function opcionesPeticion(limiteMs = TIEMPO_LIMITE_MS): RequestInit {
+  return { signal: AbortSignal.timeout(limiteMs) }
 }
 
 export class ErrorApi extends Error {
@@ -21,7 +24,7 @@ async function obtenerJson(respuesta: Response): Promise<unknown> {
 }
 
 export async function obtenerInstantanea(): Promise<Instantanea> {
-  const respuesta = await fetch('/api/instantanea', opcionesPeticion())
+  const respuesta = await fetch('/api/instantanea', opcionesPeticion(TIEMPO_LIMITE_INSTANTANEA_MS))
   return Instantanea.parse(await obtenerJson(respuesta))
 }
 

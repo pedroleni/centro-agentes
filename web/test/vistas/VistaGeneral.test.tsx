@@ -152,4 +152,9 @@ describe('VistaGeneral', () => {
     )
     expect(screen.getByText('· 2 proyectos')).toBeTruthy()
   })
+  it('si la primera carga falla muestra el aviso de conexión en lugar de "Cargando…"', () => {
+    render(<VistaGeneral datos={null} error={true} actualizadaMs={null} ahora={AHORA} />)
+    expect(screen.getByText(/Sin conexión con el agente/)).toBeTruthy()
+    expect(screen.queryByText('Cargando…')).toBeNull()
+  })
 })

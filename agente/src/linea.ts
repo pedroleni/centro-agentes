@@ -222,6 +222,16 @@ function eventosRollout(lineas: unknown[]): EventoLinea[] {
       continue
     }
 
+    if (
+      linea.type === 'event_msg' &&
+      payload.type === 'agent_message' &&
+      typeof payload.message === 'string'
+    ) {
+      // En la línea de tiempo el mensaje va completo (el resumen lo recorta).
+      eventos.push({ fechaMs: fecha, tipo: 'asistente', texto: textoVisible(payload.message), detalle: null })
+      continue
+    }
+
     const extraida = extraerAccionRollout(linea)
     if (extraida === null) continue
     const callId =
@@ -244,9 +254,12 @@ function eventosRollout(lineas: unknown[]): EventoLinea[] {
   return eventos
 }
 
-function eventosLogCodex(lineas: unknown[], fechaPredeterminada: number): EventoLinea[] {
+// Los `.codex-logs` no llevan hora por evento. Se usa la fecha de creación del fichero
+// más el desplazamiento en bytes de la línea (en milésimas de milisegundo): es
+// distinta para cada evento, respeta el orden y no cambia aunque el log crezca.
+function eventosLogCodex(lineas: unknown[], fechaBase: number, desplazamientos: number[]): EventoLinea[] {
   const eventos: EventoLinea[] = []
-  for (const linea of lineas) {
+  for (const [indice, linea] of lineas.entries()) {
     if (
       !esRegistro(linea) ||
       linea.type !== 'item.completed' ||
@@ -254,7 +267,7 @@ function eventosLogCodex(lineas: unknown[], fechaPredeterminada: number): Evento
     ) continue
     const item = linea.item
     const fechaLeida = fechaEventoLogCodex(linea)
-    const fecha = fechaLeida === 0 ? fechaPredeterminada : fechaLeida
+    const fecha = fechaLeida === 0 ? fechaBase + (desplazamientos[indice] ?? indice) / 1e3 : fechaLeida
 
     if (item.type === 'command_execution' && typeof item.command === 'string') {
       const accion = accionDeToolUse('Bash', { command: item.command }, fecha)
@@ -280,7 +293,7 @@ function eventosLogCodex(lineas: unknown[], fechaPredeterminada: number): Evento
       eventos.push({
         fechaMs: fecha,
         tipo: 'asistente',
-        texto: normalizarTextoAccion(item.text),
+        texto: textoVisible(item.text),
         detalle: null,
       })
     }
@@ -291,11 +304,12 @@ function eventosLogCodex(lineas: unknown[], fechaPredeterminada: number): Evento
 function convertirLineas(
   fuente: Fuente,
   lineas: unknown[],
-  fechaPredeterminada: number,
+  fechaBase: number,
+  desplazamientos: number[],
 ): EventoLinea[] {
   if (fuente.tipo === 'claude') return eventosClaude(lineas)
   if (fuente.tipo === 'codex-rollout') return eventosRollout(lineas)
-  return eventosLogCodex(lineas, fechaPredeterminada)
+  return eventosLogCodex(lineas, fechaBase, desplazamientos)
 }
 
 export async function leerLinea(
@@ -303,8 +317,20 @@ export async function leerLinea(
   antes: number | null,
   n = 200,
 ): Promise<ResultadoLinea> {
-  const pagina = await ultimasLineas(fuente.ruta, n, antes ?? undefined)
-  const fechaPredeterminada = fuente.tipo === 'codex-log' ? (await stat(fuente.ruta)).mtimeMs : 0
+  // Además de n líneas, cada página se limita a ~2 MB (hay líneas de transcript enormes).
+  const pagina = await ultimasLineas(fuente.ruta, n, antes ?? undefined, 2_000_000)
+  let fechaBase = 0
+  if (fuente.tipo === 'codex-log') {
+    const datos = await stat(fuente.ruta)
+    fechaBase = Math.floor(datos.birthtimeMs > 0 ? datos.birthtimeMs : datos.mtimeMs)
+  }
+  // Desplazamiento en bytes de cada línea de la página dentro del fichero.
+  const desplazamientos: number[] = []
+  let desplazamiento = pagina.desdeByte
+  for (const linea of pagina.lineas) {
+    desplazamientos.push(desplazamiento)
+    desplazamiento += Buffer.byteLength(linea) + 1
+  }
   const lineas: unknown[] = pagina.lineas.map((linea) => {
     try {
       return JSON.parse(linea) as unknown
@@ -312,7 +338,7 @@ export async function leerLinea(
       return null
     }
   })
-  const eventos = convertirLineas(fuente, lineas, fechaPredeterminada)
+  const eventos = convertirLineas(fuente, lineas, fechaBase, desplazamientos)
     .map((evento, orden) => ({ evento, orden }))
     .sort((a, b) => a.evento.fechaMs - b.evento.fechaMs || a.orden - b.orden)
     .map(({ evento }) => evento)

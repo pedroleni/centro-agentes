@@ -7,14 +7,19 @@ afterEach(cleanup)
 
 describe('Avatar', () => {
   it('pinta la imagen del rol y muestra el icono de respaldo si falla', () => {
-    render(<Avatar rol="claude-explorador" estado="trabajando" tamano={88} />)
+    const { container } = render(<Avatar rol="claude-explorador" estado="trabajando" tamano={88} />)
 
     const imagen = screen.getByRole('img', { name: 'Explorador' })
     expect(imagen.getAttribute('src')).toBe('/agentes/claude-explorador.png')
 
     fireEvent.error(imagen)
 
-    expect(screen.queryByRole('img', { name: 'Explorador' })).toBeNull()
+    expect(container.querySelector('img')).toBeNull()
     expect(screen.getByText('✱')).toBeTruthy()
+  })
+  it('el icono de respaldo se anuncia como imagen', () => {
+    const { container } = render(<Avatar rol="codex" estado="trabajando" tamano={28} />)
+    fireEvent.error(container.querySelector('img')!)
+    expect(screen.getByRole('img', { name: 'Codex' })).toBeTruthy()
   })
 })

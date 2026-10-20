@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -292,5 +292,34 @@ describe('crearRegistroFuentes', () => {
     ).rejects.toThrow('fallo sintetico')
     expect(registro.obtener('nueva')).toEqual(nueva)
     expect(registro.obtener('fallida')).toBeNull()
+  })
+  it('muestra completos los mensajes largos de Codex, en rollouts y en logs', async () => {
+    const largo = 'palabra '.repeat(60).trim()
+    const rollout = await crearJsonl('rollout-largo.jsonl', [
+      { timestamp: '2026-10-20T09:00:00.000Z', type: 'event_msg', payload: { type: 'agent_message', message: largo } },
+    ])
+    const log = await crearJsonl('log-largo.jsonl', [
+      { type: 'item.completed', item: { type: 'agent_message', text: largo } },
+    ])
+    expect((await leerLinea(fuente('codex-rollout', rollout), null)).eventos[0]?.texto).toBe(largo)
+    expect((await leerLinea(fuente('codex-log', log), null)).eventos[0]?.texto).toBe(largo)
+  })
+
+  it('da a los eventos de un log sin timestamps horas distintas, ordenadas y estables', async () => {
+    const log = await crearJsonl('log-sin-horas.jsonl', [
+      { type: 'item.completed', item: { type: 'command_execution', command: 'npm test', aggregated_output: '' } },
+      { type: 'item.completed', item: { type: 'command_execution', command: 'npm test', aggregated_output: '' } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'hecho' } },
+    ])
+    const primera = (await leerLinea(fuente('codex-log', log), null)).eventos
+    expect(primera).toHaveLength(3)
+    const horas = primera.map((evento) => evento.fechaMs)
+    expect(new Set(horas).size).toBe(3)
+    expect([...horas].sort((a, b) => a - b)).toEqual(horas)
+
+    const despues = new Date(Date.now() + 60_000)
+    await utimes(log, despues, despues)
+    const segunda = (await leerLinea(fuente('codex-log', log), null)).eventos
+    expect(segunda.map((evento) => evento.fechaMs)).toEqual(horas)
   })
 })

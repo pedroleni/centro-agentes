@@ -29,6 +29,7 @@ export function Avatar({ rol, estado, tamano }: PropiedadesAvatar) {
         {errorImagen ? (
           <span
             className="av-respaldo"
+            role="img"
             aria-label={nombreRol(rol)}
             style={{ fontSize: Math.max(12, Math.round(tamano * .34)) }}
           >

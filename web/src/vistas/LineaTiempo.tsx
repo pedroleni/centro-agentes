@@ -2,6 +2,7 @@ import type { Agente } from '@centro/compartido'
 import { useEffect, useRef, useState } from 'react'
 import type { EventoLinea } from '../api.js'
 import { Avatar } from './Avatar.js'
+import { Markdown } from './Markdown.js'
 
 type PropiedadesLineaTiempo = {
   agente: Agente
@@ -84,7 +85,7 @@ export function LineaTiempo({ agente, eventos, activo }: PropiedadesLineaTiempo)
             <article className="da-evento da-usuario" key={clave}>
               <div className="da-burbuja">
                 <div className="da-etiqueta"><strong>Tú</strong><time>{hora(evento.fechaMs)}</time></div>
-                <p>{evento.texto}</p>
+                <Markdown texto={evento.texto} />
               </div>
             </article>
           )
@@ -96,7 +97,7 @@ export function LineaTiempo({ agente, eventos, activo }: PropiedadesLineaTiempo)
               <Avatar rol={agente.rol} estado={agente.estado} tamano={28} />
               <div className="da-burbuja">
                 <div className="da-etiqueta"><strong>Agente</strong><time>{hora(evento.fechaMs)}</time></div>
-                <p>{evento.texto}</p>
+                <Markdown texto={evento.texto} />
               </div>
             </article>
           )

@@ -137,4 +137,13 @@ describe('DetalleAgente', () => {
     expect(screen.getByText('Este agente ya no está disponible')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Volver' }).getAttribute('href')).toBe('#/')
   })
+  it('pinta el Markdown de las respuestas del agente', () => {
+    const { container } = render(
+      <DetalleAgente agente={agente} proyectos={[proyecto]}
+        linea={{ antes: null, eventos: [{ fechaMs: 5, tipo: 'asistente', texto: 'Listo: **303 tests** con `npm test`', detalle: null }] }}
+        cargarAnteriores={() => {}} ahora={AHORA} />,
+    )
+    expect(container.querySelector('.da-asistente .md strong')?.textContent).toBe('303 tests')
+    expect(container.querySelector('.da-asistente .md code')?.textContent).toBe('npm test')
+  })
 })

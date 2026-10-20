@@ -123,6 +123,9 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
       },
       dirWeb,
     })
+    // Se empieza a construir la primera instantánea ya, sin esperar a la primera
+    // visita: en frío puede tardar varios segundos.
+    void cache.obtener().catch(() => undefined)
     await arrancarPanel({ puerto, manejador })
     process.stdout.write(`Panel: http://127.0.0.1:${puerto}\n`)
     return

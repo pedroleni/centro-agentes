@@ -56,7 +56,9 @@ export function VistaGeneral({ datos, error, actualizadaMs, ahora }: Propiedades
       </header>
       <div className="ca-body">
         {datos === null || agrupacion === null ? (
-          <p className="ca-empty">Cargando…</p>
+          error
+            ? <p className="ca-empty">Sin conexión con el agente · reintentando</p>
+            : <p className="ca-empty">Cargando…</p>
         ) : (
           <>
             <div className="ca-machine">
