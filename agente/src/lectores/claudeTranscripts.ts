@@ -1,8 +1,14 @@
 import type { Dirent } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import type { TareaSesion } from '@centro/compartido'
+import type { Accion, ResumenActividad, TareaSesion } from '@centro/compartido'
+import {
+  accionDeToolUse,
+  normalizarTextoAccion,
+  registrarActividad,
+  resumenActividadVacio,
+} from '../actividad.js'
 import { crearLectorIncremental } from '../util/incremental.js'
 
 export type ResumenClaude = {
@@ -20,6 +26,13 @@ export type ResumenClaude = {
   tareas: TareaSesion[]
   ficherosEditados: string[]
   commits: { fechaMs: number; dir: string }[]
+  ultimaAccion: Accion | null
+  resumenActividad: ResumenActividad
+}
+
+export type MetaSubagente = {
+  agentType: string | null
+  descripcion: string | null
 }
 
 export type TranscriptEncontrado = {
@@ -177,17 +190,29 @@ function directoriosDeCommits(comando: string, cwd: string, home: string): strin
   return directorios
 }
 
-function aplicarHerramienta(estado: EstadoResumen, valor: unknown): void {
+function actualizarUltimaAccion(estado: EstadoResumen, accion: Accion): void {
+  if (estado.ultimaAccion === null || accion.fechaMs >= estado.ultimaAccion.fechaMs) {
+    estado.ultimaAccion = accion
+  }
+}
+
+function aplicarHerramienta(estado: EstadoResumen, valor: unknown, fechaMs: number | null): void {
   if (!esRegistro(valor) || valor.type !== 'tool_use' || typeof valor.name !== 'string') return
-  if (!esRegistro(valor.input)) return
+  const input = esRegistro(valor.input) ? valor.input : {}
+
+  if (fechaMs !== null) {
+    const accion = accionDeToolUse(valor.name, input, fechaMs)
+    actualizarUltimaAccion(estado, accion)
+    registrarActividad(estado.resumenActividad, accion)
+  }
 
   if (valor.name === 'TodoWrite') {
-    estado.tareas = mapearTareas(valor.input.todos)
+    estado.tareas = mapearTareas(input.todos)
     return
   }
 
   if (!['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(valor.name)) return
-  const ruta = valor.input.file_path ?? valor.input.notebook_path
+  const ruta = input.file_path ?? input.notebook_path
   if (typeof ruta === 'string' && !estado.ficherosEditados.includes(ruta)) {
     estado.ficherosEditados.push(ruta)
   }
@@ -207,6 +232,8 @@ function estadoInicial(): EstadoResumen {
     tareas: [],
     ficherosEditados: [],
     commits: [],
+    ultimaAccion: null,
+    resumenActividad: resumenActividadVacio(),
   }
 }
 
@@ -253,7 +280,21 @@ function aplicarLinea(estado: EstadoResumen, valor: unknown, home: string): void
   }
   if (Array.isArray(mensaje.content)) {
     for (const contenido of mensaje.content) {
-      aplicarHerramienta(estado, contenido)
+      aplicarHerramienta(estado, contenido, fechaMs)
+      if (
+        esRegistro(contenido) &&
+        contenido.type === 'text' &&
+        typeof contenido.text === 'string' &&
+        fechaMs !== null
+      ) {
+        const accion: Accion = {
+          tipo: 'mensaje',
+          texto: normalizarTextoAccion(contenido.text),
+          fechaMs,
+        }
+        actualizarUltimaAccion(estado, accion)
+        registrarActividad(estado.resumenActividad, accion)
+      }
       if (
         esRegistro(contenido) &&
         contenido.type === 'tool_use' &&
@@ -274,6 +315,14 @@ function aplicarLinea(estado: EstadoResumen, valor: unknown, home: string): void
         }
       }
     }
+  } else if (typeof mensaje.content === 'string' && fechaMs !== null) {
+    const accion: Accion = {
+      tipo: 'mensaje',
+      texto: normalizarTextoAccion(mensaje.content),
+      fechaMs,
+    }
+    actualizarUltimaAccion(estado, accion)
+    registrarActividad(estado.resumenActividad, accion)
   }
 }
 
@@ -304,8 +353,26 @@ export function crearLectorClaude(home = homedir()): { resumen(ruta: string): Pr
         tareas: estado.tareas.map((tarea) => ({ ...tarea })),
         ficherosEditados: [...estado.ficherosEditados],
         commits: estado.commits.map((commit) => ({ ...commit })),
+        ultimaAccion: estado.ultimaAccion === null ? null : { ...estado.ultimaAccion },
+        resumenActividad: {
+          ...estado.resumenActividad,
+          ficheros: [...estado.resumenActividad.ficheros],
+        },
       }
     },
+  }
+}
+
+export async function leerMetaSubagente(ruta: string): Promise<MetaSubagente> {
+  try {
+    const valor = JSON.parse(await readFile(ruta, 'utf8')) as unknown
+    if (!esRegistro(valor)) return { agentType: null, descripcion: null }
+    return {
+      agentType: typeof valor.agentType === 'string' ? valor.agentType : null,
+      descripcion: typeof valor.description === 'string' ? valor.description : null,
+    }
+  } catch {
+    return { agentType: null, descripcion: null }
   }
 }
 
@@ -375,5 +442,14 @@ export async function listarTranscripts(
     }
   }
 
-  return encontrados.sort((a, b) => a.ruta.localeCompare(b.ruta))
+  const masRecientePorSesion = new Map<string, TranscriptEncontrado>()
+  for (const encontrado of encontrados) {
+    const clave = `${encontrado.sessionId}\0${encontrado.agenteSubId ?? ''}`
+    const actual = masRecientePorSesion.get(clave)
+    if (actual === undefined || encontrado.mtimeMs > actual.mtimeMs) {
+      masRecientePorSesion.set(clave, encontrado)
+    }
+  }
+
+  return [...masRecientePorSesion.values()].sort((a, b) => a.ruta.localeCompare(b.ruta))
 }

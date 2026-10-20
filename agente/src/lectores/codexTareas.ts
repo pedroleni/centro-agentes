@@ -1,6 +1,13 @@
 import type { Dirent } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
+import type { Accion, ResumenActividad } from '@centro/compartido'
+import {
+  accionDeToolUse,
+  normalizarTextoAccion,
+  registrarActividad,
+  resumenActividadVacio,
+} from '../actividad.js'
 import { leerLineasDesde } from '../util/lineas.js'
 
 export type TareaCodex = {
@@ -12,6 +19,8 @@ export type TareaCodex = {
   ultimoMensaje: string | null
   completada: boolean
   mtimeMs: number
+  ultimaAccion: Accion | null
+  resumenActividad: ResumenActividad
 }
 
 type ResumenLog = Omit<TareaCodex, 'archivo' | 'mtimeMs'>
@@ -26,6 +35,35 @@ async function listarLogs(directorio: string): Promise<Dirent[]> {
   } catch {
     return []
   }
+}
+
+function fechaEvento(evento: Record<string, unknown>): number {
+  const valor = evento.timestamp ?? evento.created_at
+  const fechaMs =
+    typeof valor === 'string' || typeof valor === 'number'
+      ? new Date(valor).getTime()
+      : Number.NaN
+  return Number.isFinite(fechaMs) ? fechaMs : 0
+}
+
+function ficherosCambio(item: Record<string, unknown>): string[] {
+  const resultado: string[] = []
+  if (typeof item.path === 'string') resultado.push(item.path)
+  if (Array.isArray(item.changes)) {
+    for (const cambio of item.changes) {
+      if (esRegistro(cambio) && typeof cambio.path === 'string') resultado.push(cambio.path)
+    }
+  }
+  return resultado
+}
+
+function actualizarAccion(
+  resumen: ResumenLog,
+  accion: Accion,
+  ficherosEditados?: string[],
+): void {
+  resumen.ultimaAccion = accion
+  registrarActividad(resumen.resumenActividad, accion, ficherosEditados)
 }
 
 async function leerLog(archivo: string): Promise<TareaCodex | null> {
@@ -57,6 +95,8 @@ async function leerLog(archivo: string): Promise<TareaCodex | null> {
           modelo: evento.model,
           ultimoMensaje: null,
           completada: false,
+          ultimaAccion: null,
+          resumenActividad: resumenActividadVacio(),
         }
         continue
       }
@@ -65,18 +105,35 @@ async function leerLog(archivo: string): Promise<TareaCodex | null> {
         resumen.threadId = evento.thread_id
       } else if (evento.type === 'turn.completed') {
         resumen.completada = true
-      } else if (
-        evento.type === 'item.completed' &&
-        esRegistro(evento.item) &&
-        evento.item.type === 'agent_message' &&
-        typeof evento.item.text === 'string'
-      ) {
-        resumen.ultimoMensaje = evento.item.text
+      } else if (evento.type === 'item.completed' && esRegistro(evento.item)) {
+        const item = evento.item
+        const fechaMs = fechaEvento(evento)
+        if (item.type === 'command_execution' && typeof item.command === 'string') {
+          actualizarAccion(resumen, accionDeToolUse('Bash', { command: item.command }, fechaMs))
+        } else if (item.type === 'file_change') {
+          const ficheros = ficherosCambio(item)
+          const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
+          actualizarAccion(resumen, {
+            tipo: 'edicion',
+            texto: normalizarTextoAccion(nombres.join(', ')),
+            fechaMs,
+          }, ficheros)
+        } else if (item.type === 'agent_message' && typeof item.text === 'string') {
+          resumen.ultimoMensaje = item.text
+          actualizarAccion(resumen, {
+            tipo: 'mensaje',
+            texto: normalizarTextoAccion(item.text),
+            fechaMs,
+          })
+        }
       }
     }
 
     if (resumen === null) return null
     const datos = await stat(archivo)
+    if (resumen.ultimaAccion !== null && resumen.ultimaAccion.fechaMs === 0) {
+      resumen.ultimaAccion.fechaMs = datos.mtimeMs
+    }
     return { archivo, ...resumen, mtimeMs: datos.mtimeMs }
   } catch {
     return null

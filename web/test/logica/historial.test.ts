@@ -5,7 +5,8 @@ import { historialPorDia } from '../../src/logica/historial.js'
 function crearAgente(cambios: Partial<Agente> = {}): Agente {
   return {
     id: 'claude:uno', tipo: 'claude', modo: 'interactivo', titulo: 'Sesión', cwd: '/proyecto',
-    proyectoIds: ['proyecto-1'], estado: 'cerrada', modelo: null, esfuerzo: null,
+    proyectoIds: ['proyecto-1'], estado: 'cerrada', rol: 'claude', ultimaAccion: null,
+    resumenActividad: { comandos: 0, ediciones: 0, mensajes: 0, ficheros: [] }, modelo: null, esfuerzo: null,
     contexto: null, tokensTotales: null, ultimoPrompt: null, rama: 'main', pr: null,
     inicioMs: null, ultimaActividadMs: 0, padreId: null, entrada: null,
     puedeContinuar: true, tareas: [], commitsPorProyecto: {}, ...cambios,

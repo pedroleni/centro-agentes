@@ -16,7 +16,9 @@ import type { ConfigAgente } from './config.js'
 import { leerSesionesVivas, type SesionViva } from './lectores/claudeSesiones.js'
 import {
   crearLectorClaude,
+  leerMetaSubagente,
   listarTranscripts,
+  type MetaSubagente,
   type ResumenClaude,
   type TranscriptEncontrado,
 } from './lectores/claudeTranscripts.js'
@@ -34,6 +36,7 @@ import { descubrirProyectos, type ProyectoBase } from './lectores/proyectos.js'
 import type { RutasBase } from './rutas/base.js'
 import { crearGuardian } from './rutas/guardian.js'
 import { enmascararSecretos } from './util/enmascarar.js'
+import { rolClaude, rolCodex } from './actividad.js'
 
 const SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1_000
 const UN_DIA_MS = 24 * 60 * 60 * 1_000
@@ -50,6 +53,10 @@ export type DependenciasInstantanea = {
   ahoraMs: number
   pidVivo: (pid: number) => boolean
   ejecutar: Ejecutar
+  registrarFuente?: (
+    agenteId: string,
+    fuente: { tipo: 'claude' | 'codex-rollout' | 'codex-log'; ruta: string },
+  ) => void
 }
 
 type ProyectoEnConstruccion = ProyectoBase & {
@@ -61,6 +68,7 @@ type ProyectoEnConstruccion = ProyectoBase & {
 type TareaConProyecto = {
   tarea: TareaCodex
   proyecto: ProyectoBase
+  rutaValidada: string
 }
 
 async function esDirectorio(ruta: string): Promise<boolean> {
@@ -184,12 +192,13 @@ function agenteClaude(
   proyectos: ProyectoBase[],
   cfg: ConfigAgente,
   so: SO,
+  meta: MetaSubagente,
 ): Agente {
   const viva = sesion?.vivo === true ? sesion : undefined
   const estado: EstadoAgente =
     viva === undefined ? 'cerrada' : viva.status === 'busy' ? 'trabajando' : 'esperandote'
   const cwd = resumen.cwd ?? viva?.cwd ?? ''
-  const titulo = resumen.titulo ?? viva?.nombre ?? resumen.sessionId
+  const titulo = meta.descripcion ?? resumen.titulo ?? viva?.nombre ?? resumen.sessionId
   const idBase = `claude:${resumen.sessionId}`
 
   return {
@@ -200,6 +209,9 @@ function agenteClaude(
     cwd,
     proyectoIds: asignarProyectos(cwd, resumen.ficherosEditados, proyectos),
     estado,
+    rol: rolClaude(meta.agentType, meta.descripcion),
+    ultimaAccion: resumen.ultimaAccion,
+    resumenActividad: resumen.resumenActividad,
     modelo: resumen.modelo,
     esfuerzo: null,
     contexto:
@@ -242,6 +254,9 @@ function agenteClaudeSinTranscript(sesion: SesionViva, proyectos: ProyectoBase[]
     cwd: sesion.cwd,
     proyectoIds: asignarProyectos(sesion.cwd, [], proyectos),
     estado,
+    rol: 'claude',
+    ultimaAccion: null,
+    resumenActividad: { comandos: 0, ediciones: 0, mensajes: 0, ficheros: [] },
     modelo: null,
     esfuerzo: null,
     contexto: null,
@@ -299,9 +314,18 @@ async function construirAgentesClaude(
     if (ruta === null) continue
     try {
       const resumen = await lectorClaude.resumen(ruta)
+      let meta: MetaSubagente = { agentType: null, descripcion: null }
+      if (resumen.agenteSubId !== null) {
+        const rutaMeta = await rutaPermitida(
+          guardian,
+          path.join(path.dirname(ruta), `agent-${resumen.agenteSubId}.meta.json`),
+        )
+        if (rutaMeta !== null) meta = await leerMetaSubagente(rutaMeta)
+      }
       const sesion = resumen.agenteSubId === null ? porId.get(resumen.sessionId) : undefined
-      const agente = agenteClaude(resumen, encontrado, sesion, proyectos, dep.cfg, dep.so)
+      const agente = agenteClaude(resumen, encontrado, sesion, proyectos, dep.cfg, dep.so, meta)
       agentes.set(agente.id, agente)
+      dep.registrarFuente?.(agente.id, { tipo: 'claude', ruta })
     } catch {
       // El transcript puede cambiar o desaparecer mientras se construye la instantánea.
     }
@@ -330,12 +354,16 @@ async function leerTareasGuardadas(
       continue
     }
     let todosPermitidos = true
+    const rutasValidadas = new Map<string, string>()
     for (const entrada of entradas) {
       if (!entrada.isFile() || path.extname(entrada.name) !== '.jsonl') continue
-      if ((await rutaPermitida(guardian, path.join(dirLogs, entrada.name))) === null) {
+      const rutaLog = path.join(dirLogs, entrada.name)
+      const rutaValidada = await rutaPermitida(guardian, rutaLog)
+      if (rutaValidada === null) {
         todosPermitidos = false
         break
       }
+      rutasValidadas.set(rutaLog, rutaValidada)
     }
     if (!todosPermitidos) continue
 
@@ -343,7 +371,8 @@ async function leerTareasGuardadas(
     for (const tarea of tareas) {
       // Misma ventana que los hilos: las tareas viejas solo ensucian la vista.
       if (tarea.mtimeMs < desdeMs) continue
-      resultado.push({ tarea, proyecto })
+      const rutaValidada = rutasValidadas.get(tarea.archivo)
+      if (rutaValidada !== undefined) resultado.push({ tarea, proyecto, rutaValidada })
     }
   }
   return resultado
@@ -358,6 +387,11 @@ function agenteDeHilo(
   ahoraMs: number,
 ): Agente {
   const esTarea = hilo.source === 'exec' || tarea !== undefined
+  const resumenActividad =
+    tarea !== undefined &&
+    rollout.resumenActividad.comandos < tarea.tarea.resumenActividad.comandos
+      ? tarea.tarea.resumenActividad
+      : rollout.resumenActividad
   const ultimaActividadMs = maximo([
     hilo.actualizadoMs,
     rollout.ultimaActividadMs,
@@ -385,6 +419,9 @@ function agenteDeHilo(
     cwd: hilo.cwd,
     proyectoIds: asignarProyectos(hilo.cwd, [], proyectos),
     estado,
+    rol: rolCodex(hilo.source, hilo.modelo, esTarea),
+    ultimaAccion: rollout.ultimaAccion,
+    resumenActividad,
     modelo: hilo.modelo,
     esfuerzo: hilo.esfuerzo,
     contexto: rollout.contexto,
@@ -412,10 +449,13 @@ function agenteDeTareaSinHilo(
     id: `codex-tarea:${tarea.archivo}`,
     tipo: 'codex',
     modo: 'tarea',
-    titulo: enmascararSecretos(tarea.prompt),
+    titulo: enmascararSecretos(tituloDePrompt(tarea.prompt)),
     cwd: proyecto.ruta,
     proyectoIds: [proyecto.id],
     estado,
+    rol: rolCodex('exec', tarea.modelo, true),
+    ultimaAccion: tarea.ultimaAccion,
+    resumenActividad: tarea.resumenActividad,
     modelo: tarea.modelo,
     esfuerzo: tarea.esfuerzo,
     contexto: null,
@@ -431,6 +471,11 @@ function agenteDeTareaSinHilo(
     tareas: [],
     commitsPorProyecto: {},
   }
+}
+
+function tituloDePrompt(prompt: string): string {
+  const primera = prompt.split(/\r?\n/).map((linea) => linea.trim()).find((linea) => linea.length > 0) ?? ''
+  return primera.length <= 90 ? primera : `${primera.slice(0, 90)}…`
 }
 
 async function construirAgentesCodex(
@@ -466,16 +511,16 @@ async function construirAgentesCodex(
     if (rutaRollout === null) continue
     try {
       const rollout = await lectorRollouts.resumen(rutaRollout)
-      agentes.push(
-        agenteDeHilo(
-          hilo,
-          rollout,
-          tareasPorHilo.get(hilo.id),
-          abiertos,
-          proyectos,
-          dep.ahoraMs,
-        ),
+      const agente = agenteDeHilo(
+        hilo,
+        rollout,
+        tareasPorHilo.get(hilo.id),
+        abiertos,
+        proyectos,
+        dep.ahoraMs,
       )
+      agentes.push(agente)
+      dep.registrarFuente?.(agente.id, { tipo: 'codex-rollout', ruta: rutaRollout })
     } catch {
       // Un rollout rechazado, incompleto o desaparecido omite solo su agente.
     }
@@ -484,7 +529,9 @@ async function construirAgentesCodex(
   const idsHilos = new Set(hilos.map((hilo) => hilo.id))
   for (const tarea of tareas) {
     if (tarea.tarea.threadId !== null && idsHilos.has(tarea.tarea.threadId)) continue
-    agentes.push(agenteDeTareaSinHilo(tarea, dep.ahoraMs))
+    const agente = agenteDeTareaSinHilo(tarea, dep.ahoraMs)
+    agentes.push(agente)
+    dep.registrarFuente?.(agente.id, { tipo: 'codex-log', ruta: tarea.rutaValidada })
   }
   return agentes
 }

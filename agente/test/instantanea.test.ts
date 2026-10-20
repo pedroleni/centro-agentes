@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { appendFile, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -17,6 +17,10 @@ async function preparar(): Promise<HomeFalso> {
 async function construir(
   hogar: HomeFalso,
   ejecutar: (cmd: string, args: string[]) => Promise<string> = async () => '',
+  registrarFuente?: (
+    agenteId: string,
+    fuente: { tipo: 'claude' | 'codex-rollout' | 'codex-log'; ruta: string },
+  ) => void,
 ) {
   return construirInstantanea({
     cfg: hogar.cfg,
@@ -25,6 +29,7 @@ async function construir(
     ahoraMs: hogar.ahoraMs,
     pidVivo: (pid: number) => pid === 4321,
     ejecutar,
+    registrarFuente,
   })
 }
 
@@ -47,6 +52,7 @@ describe('construirInstantanea', () => {
     const viva = instantanea.agentes.find((agente) => agente.id === 'claude:viva-a')
     expect(viva).toMatchObject({
       estado: 'trabajando',
+      rol: 'claude',
       proyectoIds: [hogar.idA],
       puedeContinuar: false,
       contexto: { usados: 60, ventana: 1_000_000 },
@@ -64,6 +70,7 @@ describe('construirInstantanea', () => {
     expect(codex).toHaveLength(1)
     expect(codex[0]).toMatchObject({
       modo: 'tarea',
+      rol: 'codex-obrero',
       modelo: 'gpt-5.6-sol',
       proyectoIds: [hogar.idA],
       estado: 'en-curso',
@@ -80,6 +87,125 @@ describe('construirInstantanea', () => {
     expect(proyectoA?.pendientes).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ titulo: 'Ya hecha' })]),
     )
+  })
+
+  it('usa la actividad del log unido cuando tiene mas comandos que el rollout', async () => {
+    const hogar = await preparar()
+    const log = path.join(hogar.proyectoA, '.codex-logs', 'tarea.jsonl')
+    await appendFile(
+      log,
+      [
+        {
+          type: 'item.completed',
+          item: { type: 'command_execution', command: 'npm test' },
+        },
+        {
+          type: 'item.completed',
+          item: { type: 'file_change', changes: [{ path: '/repo/src/cambio.ts' }] },
+        },
+        {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'Trabajo completado' },
+        },
+      ].map((evento) => JSON.stringify(evento)).join('\n') + '\n',
+    )
+
+    const instantanea = await construir(hogar)
+    const agente = instantanea.agentes.find((item) => item.id === 'codex:hilo-exec')
+
+    expect(agente?.resumenActividad).toEqual({
+      comandos: 1,
+      ediciones: 1,
+      mensajes: 1,
+      ficheros: ['cambio.ts'],
+    })
+  })
+
+  it('usa la descripción del meta.json como título y el agentType como rol del subagente', async () => {
+    const hogar = await preparar()
+    const directorio = path.join(
+      hogar.rutas.claude,
+      'projects',
+      '-home-Desktop-Proyectos-IA',
+      'viva-a',
+      'subagents',
+    )
+    const transcript = path.join(directorio, 'agent-explora.jsonl')
+    await mkdir(directorio, { recursive: true })
+    await writeFile(
+      transcript,
+      `${JSON.stringify({
+        type: 'assistant',
+        cwd: hogar.proyectoA,
+        timestamp: new Date(hogar.ahoraMs - 500).toISOString(),
+        message: { content: [{ type: 'text', text: 'Analizando.' }] },
+      })}\n`,
+    )
+    await writeFile(
+      path.join(directorio, 'agent-explora.meta.json'),
+      JSON.stringify({ agentType: 'Explore', description: 'Encontrar el origen del fallo' }),
+    )
+
+    const instantanea = await construir(hogar)
+
+    expect(instantanea.agentes.find((agente) => agente.id === 'claude:viva-a:explora'))
+      .toMatchObject({
+        titulo: 'Encontrar el origen del fallo',
+        rol: 'claude-explorador',
+      })
+  })
+
+  it('registra las rutas validadas de transcripts, rollouts y logs', async () => {
+    const hogar = await preparar()
+    const fuentes: Array<{
+      agenteId: string
+      fuente: { tipo: 'claude' | 'codex-rollout' | 'codex-log'; ruta: string }
+    }> = []
+
+    await construir(hogar, async () => '', (agenteId, fuente) => {
+      fuentes.push({ agenteId, fuente })
+    })
+
+    expect(fuentes).toEqual(expect.arrayContaining([
+      {
+        agenteId: 'claude:viva-a',
+        fuente: {
+          tipo: 'claude',
+          ruta: path.join(
+            hogar.rutas.claude,
+            'projects',
+            '-home-Desktop-Proyectos-IA',
+            'viva-a.jsonl',
+          ),
+        },
+      },
+      {
+        agenteId: 'codex:hilo-exec',
+        fuente: {
+          tipo: 'codex-rollout',
+          ruta: path.join(hogar.rutas.codex, 'sessions', 'hilo-exec.jsonl'),
+        },
+      },
+    ]))
+  })
+
+  it('titula una tarea Codex con la primera línea no vacía del prompt y la recorta', async () => {
+    const hogar = await preparar()
+    const primeraLinea = 'x'.repeat(95)
+    await writeFile(
+      path.join(hogar.proyectoA, '.codex-logs', 'sin-hilo.jsonl'),
+      `${JSON.stringify({
+        type: 'task_meta',
+        effort: 'medium',
+        model: 'gpt-5.6-sol',
+        prompt: `\n   \n${primeraLinea}\nEsta línea no forma parte del título`,
+      })}\n`,
+    )
+
+    const instantanea = await construir(hogar)
+    const tarea = instantanea.agentes.find((agente) => agente.id.includes('sin-hilo.jsonl'))
+
+    expect(tarea?.titulo).toBe(`${'x'.repeat(90)}…`)
   })
 
   it('avisa y omite Codex si falta su carpeta', async () => {
