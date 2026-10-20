@@ -1,12 +1,14 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type { SO } from '@centro/compartido'
 import { cargarConfig } from './config.js'
+import { diagnosticar } from './diagnostico.js'
 import { construirInstantanea } from './instantanea.js'
 import { commitsRecientes } from './lectores/git.js'
 import { crearRegistroFuentes, leerLinea } from './linea.js'
@@ -93,6 +95,26 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   if (argumentos[0] === 'instantanea') {
     const instantanea = await construir()
     process.stdout.write(`${JSON.stringify(instantanea, null, 2)}\n`)
+    return
+  }
+
+  if (argumentos[0] === 'diagnostico') {
+    const diagnostico = await diagnosticar({
+      so,
+      rutas,
+      raices: cfg.raices,
+      ejecutar,
+      cargarPty: () => {
+        try {
+          createRequire(import.meta.url)('node-pty')
+          return true
+        } catch {
+          return false
+        }
+      },
+      version: process.version,
+    })
+    process.stdout.write(`${JSON.stringify(diagnostico, null, 2)}\n`)
     return
   }
 
@@ -197,7 +219,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   }
 
   throw new Error(
-    'Uso: cli.ts instantanea | panel [--puerto N] | alta --hub <url> --codigo <c> [--nombre <n>] | conectar   (todas admiten --config <ruta>)',
+    'Uso: cli.ts instantanea | diagnostico | panel [--puerto N] | alta --hub <url> --codigo <c> [--nombre <n>] | conectar   (todas admiten --config <ruta>)',
   )
 }
 

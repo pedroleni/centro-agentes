@@ -25,6 +25,7 @@
     "hub:configurar": "tsx hub/src/cli.ts configurar",
     "agente:alta": "tsx agente/src/cli.ts alta",
     "agente:conectar": "tsx agente/src/cli.ts conectar",
+    "agente:diagnostico": "tsx agente/src/cli.ts diagnostico",
     "postinstall": "node scripts/permisos-node-pty.mjs"
   },
   "devDependencies": {

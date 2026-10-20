@@ -113,10 +113,43 @@ El hub y su agente arrancan al **iniciar sesión** en el Mac mini, no antes.
 Tras un reinicio, el panel no estará disponible hasta que inicies sesión en
 él (es la decisión de la especificación, §5.4).
 
-### Windows
+## Windows
 
-Llega en la **fase 5** (necesita un lanzador multiplataforma para los
-scripts y probarlo en tu Windows).
+Esta es la lista de comprobación para dejar tu PC Windows conectado al hub y
+verificar allí lo que no se puede probar desde macOS:
+
+1. Instala **Node 22 LTS**, **Git** y **Tailscale**, y entra en Tailscale con
+   tu cuenta.
+2. Clona el repositorio y, desde su carpeta en PowerShell, instala exactamente
+   sus dependencias con `npm ci`.
+3. Ejecuta `npm run agente:diagnostico`. Comprueba en el JSON que
+   `claude.existe`, `codex.existe` y `terminales.disponible` valen `true`.
+4. En el hub genera un código para añadir la máquina y úsalo así:
+   `npm run agente:alta -- --hub https://<mac-mini>.<tailnet>.ts.net --codigo <CÓDIGO> --nombre Windows`.
+5. Instala el arranque automático con
+   `powershell -ExecutionPolicy Bypass -File scripts\servicios\instalar-agente-windows.ps1`.
+   Cierra la sesión de Windows, vuelve a entrar y comprueba que la máquina
+   aparece como **«Conectada»** en el hub.
+6. Desde el móvil, pulsa **«Nueva sesión de Claude»** en un proyecto de
+   Windows. Comprueba que se abre y responde; sal del terminal, vuelve a
+   entrar y verifica que reaparece la salida reciente.
+7. En una sesión cerrada de Codex de Windows, pulsa **«Continuar aquí»** y
+   comprueba que se reanuda en el mismo proyecto.
+
+Si algo no va:
+
+- La salida del agente queda en `%LOCALAPPDATA%\centro-agentes\agente.log`.
+- Si al instalar la tarea sale «Acceso denegado», abre PowerShell como
+  administrador y repite el paso 5.
+- Para quitar la tarea:
+  `powershell -ExecutionPolicy Bypass -File scripts\servicios\instalar-agente-windows.ps1 -Desinstalar`.
+- La primera vez que Claude abre una carpeta puede preguntar si confías en
+  ella. Contesta desde el terminal con ↓ y Enter.
+- En Windows los terminales viven mientras el agente esté en marcha. Si se
+  reinicia (o cierras sesión), se cierran.
+- Pásame la salida de `npm run agente:diagnostico` y el final del registro:
+  con eso lo corrijo desde aquí. El diagnóstico solo cuenta carpetas y
+  ficheros, no lee ningún secreto.
 
 ## Desarrollo
 
