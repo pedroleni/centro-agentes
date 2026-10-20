@@ -1,0 +1,28 @@
+{
+  "name": "centro-agentes",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "workspaces": [
+    "compartido",
+    "agente"
+  ],
+  "scripts": {
+    "test": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' vitest run",
+    "lint": "eslint .",
+    "build": "tsc -b compartido agente",
+    "instantanea": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts instantanea",
+    "codex:task": "bash scripts/dev/codex-task.sh",
+    "codex:monitor": "node scripts/dev/codex-monitor.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "eslint": "^9.39.5",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}

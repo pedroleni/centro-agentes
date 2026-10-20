@@ -1,0 +1,7 @@
+{
+  "nombreMaquina": "MacBook",
+  "raices": ["~/Desktop", "~/Downloads", "~/Documents"],
+  "profundidad": 2,
+  "ocultos": [],
+  "ventanasContexto": {}
+}
