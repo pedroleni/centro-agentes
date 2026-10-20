@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { Commit, Instantanea } from '@centro/compartido'
+import type { ResultadoLinea } from '../linea.js'
 import { resolverEstatico, tipoContenido } from './estaticos.js'
 
 export type Peticion = {
@@ -18,6 +19,7 @@ type DependenciasManejador = {
   puerto: number
   obtenerInstantanea(): Promise<Instantanea>
   obtenerCommits(proyectoId: string): Promise<Commit[] | null>
+  obtenerLinea(agenteId: string, antes: number | null): Promise<ResultadoLinea | null>
   leerEstatico(ruta: string): Promise<Buffer | null>
   dirWeb: string
 }
@@ -66,6 +68,7 @@ function decodificarRuta(url: string): string | null {
 async function manejarApi(
   dep: DependenciasManejador,
   ruta: string,
+  url: string,
 ): Promise<Respuesta> {
   if (ruta === '/api/instantanea') {
     try {
@@ -85,7 +88,46 @@ async function manejarApi(
     }
   }
 
+  const coincidenciaLinea = /^\/api\/agentes\/([^/]+)\/linea$/.exec(ruta)
+  if (coincidenciaLinea?.[1] !== undefined) {
+    const antes = parametroAntes(url)
+    if (antes === undefined) return json(400, { error: 'El parametro antes no es valido' })
+    try {
+      const linea = await dep.obtenerLinea(coincidenciaLinea[1], antes)
+      return linea === null
+        ? json(404, { error: 'Agente no encontrado' })
+        : json(200, linea)
+    } catch {
+      return json(500, { error: 'No se pudo leer la linea de tiempo' })
+    }
+  }
+
   return json(404, { error: 'No encontrado' })
+}
+
+function parametroAntes(url: string): number | null | undefined {
+  const indiceQuery = url.indexOf('?')
+  if (indiceQuery === -1) return null
+  const parametros = new URLSearchParams(url.slice(indiceQuery + 1))
+  if (!parametros.has('antes')) return null
+  const valores = parametros.getAll('antes')
+  const valor = valores[0]
+  if (valores.length !== 1 || valor === undefined || !/^(?:0|[1-9]\d*)$/.test(valor)) {
+    return undefined
+  }
+  const numero = Number(valor)
+  return Number.isSafeInteger(numero) ? numero : undefined
+}
+
+function cacheControl(rutaDecodificada: string, fallback: boolean): string {
+  if (fallback || rutaDecodificada === '/' || rutaDecodificada === '/index.html') {
+    return 'no-cache'
+  }
+  if (rutaDecodificada.startsWith('/assets/')) {
+    return 'public, max-age=31536000, immutable'
+  }
+  if (rutaDecodificada.startsWith('/agentes/')) return 'public, max-age=86400'
+  return 'no-cache'
 }
 
 async function manejarEstatico(
@@ -99,7 +141,10 @@ async function manejarEstatico(
   try {
     const contenido = await dep.leerEstatico(ruta)
     if (contenido !== null) {
-      return respuesta(200, contenido, { 'Content-Type': tipoContenido(ruta) })
+      return respuesta(200, contenido, {
+        'Content-Type': tipoContenido(ruta),
+        'Cache-Control': cacheControl(rutaDecodificada, false),
+      })
     }
 
     if (path.extname(rutaDecodificada) !== '') return respuesta(404, 'No encontrado')
@@ -109,7 +154,10 @@ async function manejarEstatico(
     const contenidoIndice = await dep.leerEstatico(indice)
     return contenidoIndice === null
       ? respuesta(404, 'No encontrado')
-      : respuesta(200, contenidoIndice, { 'Content-Type': tipoContenido(indice) })
+      : respuesta(200, contenidoIndice, {
+          'Content-Type': tipoContenido(indice),
+          'Cache-Control': cacheControl(rutaDecodificada, true),
+        })
   } catch {
     return respuesta(500, 'Error interno')
   }
@@ -141,7 +189,7 @@ export function crearManejador(
           ? json(404, { error: 'No encontrado' })
           : respuesta(404, 'No encontrado')
       } else if (ruta.startsWith('/api')) {
-        resultado = await manejarApi(dep, ruta)
+        resultado = await manejarApi(dep, ruta, peticion.url)
       } else {
         resultado = await manejarEstatico(dep, peticion.url, ruta)
       }

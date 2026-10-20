@@ -9,6 +9,7 @@ import type { SO } from '@centro/compartido'
 import { cargarConfig } from './config.js'
 import { construirInstantanea } from './instantanea.js'
 import { commitsRecientes } from './lectores/git.js'
+import { crearRegistroFuentes, leerLinea } from './linea.js'
 import { crearCacheInstantanea } from './panel/cache.js'
 import { crearManejador } from './panel/manejador.js'
 import { arrancarPanel } from './panel/servidor.js'
@@ -83,7 +84,18 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
 
   if (argumentos[0] === 'panel') {
     const puerto = puertoPanel(opciones)
-    const cache = crearCacheInstantanea(construir)
+    const registroFuentes = crearRegistroFuentes()
+    const construirRegistrada = () => registroFuentes.construir((registrarFuente) =>
+      construirInstantanea({
+        cfg,
+        rutas,
+        so,
+        ahoraMs: Date.now(),
+        pidVivo,
+        ejecutar,
+        registrarFuente,
+      }))
+    const cache = crearCacheInstantanea(construirRegistrada)
     const raizRepo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
     const dirWeb = path.join(raizRepo, 'web', 'dist')
     const manejador = crearManejador({
@@ -95,6 +107,10 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
         if (proyecto === undefined) return null
         // Sin límite de fecha: un proyecto parado también debe enseñar su historial real.
         return commitsRecientes(proyecto.ruta, 0, 100)
+      },
+      obtenerLinea: async (id, antes) => {
+        const fuente = registroFuentes.obtener(id)
+        return fuente === null ? null : leerLinea(fuente, antes)
       },
       leerEstatico: async (ruta) => {
         try {

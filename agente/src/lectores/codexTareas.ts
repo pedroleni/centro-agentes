@@ -37,7 +37,7 @@ async function listarLogs(directorio: string): Promise<Dirent[]> {
   }
 }
 
-function fechaEvento(evento: Record<string, unknown>): number {
+export function fechaEventoLogCodex(evento: Record<string, unknown>): number {
   const valor = evento.timestamp ?? evento.created_at
   const fechaMs =
     typeof valor === 'string' || typeof valor === 'number'
@@ -46,7 +46,7 @@ function fechaEvento(evento: Record<string, unknown>): number {
   return Number.isFinite(fechaMs) ? fechaMs : 0
 }
 
-function ficherosCambio(item: Record<string, unknown>): string[] {
+export function ficherosCambioLogCodex(item: Record<string, unknown>): string[] {
   const resultado: string[] = []
   if (typeof item.path === 'string') resultado.push(item.path)
   if (Array.isArray(item.changes)) {
@@ -107,11 +107,11 @@ async function leerLog(archivo: string): Promise<TareaCodex | null> {
         resumen.completada = true
       } else if (evento.type === 'item.completed' && esRegistro(evento.item)) {
         const item = evento.item
-        const fechaMs = fechaEvento(evento)
+        const fechaMs = fechaEventoLogCodex(evento)
         if (item.type === 'command_execution' && typeof item.command === 'string') {
           actualizarAccion(resumen, accionDeToolUse('Bash', { command: item.command }, fechaMs))
         } else if (item.type === 'file_change') {
-          const ficheros = ficherosCambio(item)
+          const ficheros = ficherosCambioLogCodex(item)
           const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
           actualizarAccion(resumen, {
             tipo: 'edicion',

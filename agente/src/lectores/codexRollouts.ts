@@ -17,7 +17,7 @@ export type ResumenRollout = {
   resumenActividad: ResumenActividad
 }
 
-function esRegistro(valor: unknown): valor is Record<string, unknown> {
+export function esRegistro(valor: unknown): valor is Record<string, unknown> {
   return typeof valor === 'object' && valor !== null
 }
 
@@ -32,7 +32,7 @@ function estadoInicial(): ResumenRollout {
   }
 }
 
-function fechaEvento(valor: Record<string, unknown>): number | null {
+export function fechaEventoRollout(valor: Record<string, unknown>): number | null {
   const fechaMs =
     typeof valor.timestamp === 'string' || typeof valor.timestamp === 'number'
       ? new Date(valor.timestamp).getTime()
@@ -51,7 +51,7 @@ function actualizarAccion(
   registrarActividad(estado.resumenActividad, accion, ficherosEditados)
 }
 
-function argumentos(valor: unknown): Record<string, unknown> {
+export function argumentosRollout(valor: unknown): Record<string, unknown> {
   if (esRegistro(valor)) return valor
   if (typeof valor !== 'string') return {}
   try {
@@ -62,7 +62,7 @@ function argumentos(valor: unknown): Record<string, unknown> {
   }
 }
 
-function ficherosPatch(patch: string): string[] {
+export function ficherosPatch(patch: string): string[] {
   const resultado: string[] = []
   for (const coincidencia of patch.matchAll(/^\*\*\* (?:Update|Add) File: (.+)$/gm)) {
     const ruta = coincidencia[1]?.trim()
@@ -71,7 +71,12 @@ function ficherosPatch(patch: string): string[] {
   return resultado
 }
 
-function comandoDeCustomToolCall(input: string): string {
+export function comandoDeCustomToolCall(input: unknown): string {
+  const datos = argumentosRollout(input)
+  const comandoDirecto = datos.cmd ?? datos.command
+  if (typeof comandoDirecto === 'string') return comandoDirecto
+  if (typeof input !== 'string') return ''
+
   const coincidencia = /"cmd"\s*:\s*("(?:\\.|[^"\\])*")/.exec(input)
   if (coincidencia?.[1] !== undefined) {
     try {
@@ -84,31 +89,36 @@ function comandoDeCustomToolCall(input: string): string {
   return input.split(/\r?\n/, 1)[0] ?? ''
 }
 
-function aplicarEvento(estado: ResumenRollout, valor: unknown): void {
-  if (!esRegistro(valor) || !esRegistro(valor.payload)) return
+export type AccionRolloutExtraida = {
+  accion: Accion
+  ficherosEditados?: string[]
+}
 
-  const fechaMs = fechaEvento(valor)
-  if (fechaMs !== null) estado.ultimaActividadMs = fechaMs
-
+export function extraerAccionRollout(valor: unknown): AccionRolloutExtraida | null {
+  if (!esRegistro(valor) || !esRegistro(valor.payload)) return null
+  const fechaMs = fechaEventoRollout(valor)
+  if (fechaMs === null) return null
   const payload = valor.payload
-  if (valor.type === 'response_item' && fechaMs !== null) {
+
+  if (valor.type === 'response_item') {
     if (payload.type === 'function_call') {
-      const datos = argumentos(payload.arguments)
+      const datos = argumentosRollout(payload.arguments)
       const comando = datos.cmd ?? datos.command
-      if (typeof comando === 'string') {
-        actualizarAccion(estado, accionDeToolUse('Bash', { command: comando }, fechaMs))
+      return typeof comando === 'string'
+        ? { accion: accionDeToolUse('Bash', { command: comando }, fechaMs) }
+        : null
+    }
+    if (payload.type === 'custom_tool_call' && payload.name === 'exec') {
+      return {
+        accion: accionDeToolUse(
+          'Bash',
+          { command: comandoDeCustomToolCall(payload.input) },
+          fechaMs,
+        ),
       }
-    } else if (
-      payload.type === 'custom_tool_call' &&
-      payload.name === 'exec' &&
-      typeof payload.input === 'string'
-    ) {
-      actualizarAccion(
-        estado,
-        accionDeToolUse('Bash', { command: comandoDeCustomToolCall(payload.input) }, fechaMs),
-      )
-    } else if (payload.type === 'custom_tool_call' && payload.name === 'apply_patch') {
-      const datos = argumentos(payload.arguments)
+    }
+    if (payload.type === 'custom_tool_call' && payload.name === 'apply_patch') {
+      const datos = argumentosRollout(payload.arguments)
       const contenido =
         typeof payload.input === 'string'
           ? payload.input
@@ -119,41 +129,65 @@ function aplicarEvento(estado: ResumenRollout, valor: unknown): void {
               : ''
       const ficheros = ficherosPatch(contenido)
       const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
-      const accion: Accion = {
+      return {
+        accion: {
+          tipo: 'edicion',
+          texto: normalizarTextoAccion(nombres.join(', ')),
+          fechaMs,
+        },
+        ficherosEditados: ficheros,
+      }
+    }
+    return null
+  }
+
+  if (valor.type !== 'event_msg') return null
+  if (
+    payload.type === 'patch_apply_end' &&
+    payload.success !== false &&
+    (Array.isArray(payload.changes) || esRegistro(payload.changes))
+  ) {
+    const rutas = Array.isArray(payload.changes) ? payload.changes : Object.keys(payload.changes)
+    const ficheros = rutas.filter((cambio): cambio is string => typeof cambio === 'string')
+    const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
+    return {
+      accion: {
         tipo: 'edicion',
         texto: normalizarTextoAccion(nombres.join(', ')),
         fechaMs,
-      }
-      actualizarAccion(estado, accion, ficheros)
+      },
+      ficherosEditados: ficheros,
     }
-    return
   }
+  if (payload.type === 'agent_message' && typeof payload.message === 'string') {
+    return {
+      accion: {
+        tipo: 'mensaje',
+        texto: normalizarTextoAccion(payload.message),
+        fechaMs,
+      },
+    }
+  }
+  return null
+}
+
+function aplicarEvento(estado: ResumenRollout, valor: unknown): void {
+  if (!esRegistro(valor) || !esRegistro(valor.payload)) return
+
+  const fechaMs = fechaEventoRollout(valor)
+  if (fechaMs !== null) estado.ultimaActividadMs = fechaMs
+
+  const payload = valor.payload
+  const extraida = extraerAccionRollout(valor)
+  if (extraida !== null) {
+    actualizarAccion(estado, extraida.accion, extraida.ficherosEditados)
+  }
+
+  if (valor.type === 'response_item') return
 
   if (valor.type !== 'event_msg') return
   if (payload.type === 'user_message' && typeof payload.message === 'string') {
     estado.ultimoPrompt = payload.message
-  } else if (
-    payload.type === 'patch_apply_end' &&
-    payload.success === true &&
-    (Array.isArray(payload.changes) || esRegistro(payload.changes)) &&
-    fechaMs !== null
-  ) {
-    // En los rollouts reales `changes` es un objeto { ruta: cambio }; se acepta
-    // también la forma de lista por compatibilidad.
-    const rutas = Array.isArray(payload.changes) ? payload.changes : Object.keys(payload.changes)
-    const ficheros = rutas.filter((cambio): cambio is string => typeof cambio === 'string')
-    const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
-    actualizarAccion(estado, {
-      tipo: 'edicion',
-      texto: normalizarTextoAccion(nombres.join(', ')),
-      fechaMs,
-    }, ficheros)
-  } else if (payload.type === 'agent_message' && typeof payload.message === 'string' && fechaMs !== null) {
-    actualizarAccion(estado, {
-      tipo: 'mensaje',
-      texto: normalizarTextoAccion(payload.message),
-      fechaMs,
-    })
   } else if (payload.type === 'token_count' && esRegistro(payload.info)) {
     const uso = payload.info.last_token_usage
     const ventana = payload.info.model_context_window

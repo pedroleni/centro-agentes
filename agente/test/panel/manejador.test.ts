@@ -1,5 +1,6 @@
 import type { Instantanea } from '@centro/compartido'
 import { describe, expect, it, vi } from 'vitest'
+import type { ResultadoLinea } from '../../src/linea.js'
 import { crearManejador, type Peticion } from '../../src/panel/manejador.js'
 
 const instantanea: Instantanea = {
@@ -26,6 +27,7 @@ function dependencias(
     puerto: 4600,
     obtenerInstantanea: async () => instantanea,
     obtenerCommits: async () => null,
+    obtenerLinea: async () => null,
     leerEstatico: async (ruta) =>
       ruta === '/w/index.html' ? Buffer.from('<html>panel</html>') : null,
     dirWeb: '/w',
@@ -147,6 +149,59 @@ describe('crearManejador', () => {
     expect(respuesta.estado).toBe(404)
   })
 
+  it('devuelve la linea de un id codificado y pasa antes como numero', async () => {
+    const linea: ResultadoLinea = {
+      eventos: [{ fechaMs: 1, tipo: 'usuario', texto: 'Hola', detalle: null }],
+      antes: 25,
+    }
+    const obtenerLinea = vi.fn(async () => linea)
+    const manejar = crearManejador(dependencias({ obtenerLinea }))
+
+    const respuesta = await manejar(
+      peticion({ url: '/api/agentes/claude%3Asesion-1/linea?antes=50' }),
+    )
+
+    expect(respuesta.estado).toBe(200)
+    expect(JSON.parse(String(respuesta.cuerpo))).toEqual(linea)
+    expect(obtenerLinea).toHaveBeenCalledWith('claude:sesion-1', 50)
+  })
+
+  it('devuelve 404 para un id de agente desconocido', async () => {
+    const obtenerLinea = vi.fn(async () => null)
+    const manejar = crearManejador(dependencias({ obtenerLinea }))
+
+    const respuesta = await manejar(
+      peticion({ url: '/api/agentes/claude%3Ano-existe/linea' }),
+    )
+
+    expect(respuesta.estado).toBe(404)
+    expect(obtenerLinea).toHaveBeenCalledWith('claude:no-existe', null)
+  })
+
+  it('rechaza un id manipulado sin consultar el registro', async () => {
+    const obtenerLinea = vi.fn(async () => null)
+    const manejar = crearManejador(dependencias({ obtenerLinea }))
+
+    const respuesta = await manejar(
+      peticion({ url: '/api/agentes/..%2F..%2Fetc/linea' }),
+    )
+
+    expect(respuesta.estado).toBe(404)
+    expect(obtenerLinea).not.toHaveBeenCalled()
+  })
+
+  it.each(['-1', '1.5', 'abc', ''])('rechaza antes=%s si no es un entero no negativo', async (antes) => {
+    const obtenerLinea = vi.fn(async () => null)
+    const manejar = crearManejador(dependencias({ obtenerLinea }))
+
+    const respuesta = await manejar(
+      peticion({ url: `/api/agentes/claude%3Asesion/linea?antes=${antes}` }),
+    )
+
+    expect(respuesta.estado).toBe(400)
+    expect(obtenerLinea).not.toHaveBeenCalled()
+  })
+
   it('sirve index.html como fallback de SPA para una ruta sin extension', async () => {
     const manejar = crearManejador(dependencias())
 
@@ -155,6 +210,22 @@ describe('crearManejador', () => {
     expect(respuesta.estado).toBe(200)
     expect(String(respuesta.cuerpo)).toBe('<html>panel</html>')
     expect(respuesta.cabeceras['Content-Type']).toBe('text/html; charset=utf-8')
+    expect(respuesta.cabeceras['Cache-Control']).toBe('no-cache')
+  })
+
+  it.each([
+    ['/', 'no-cache'],
+    ['/assets/x.js', 'public, max-age=31536000, immutable'],
+    ['/agentes/claude.png', 'public, max-age=86400'],
+  ])('asigna la cache esperada a %s', async (url, cacheControl) => {
+    const manejar = crearManejador(dependencias({
+      leerEstatico: async () => Buffer.from('contenido'),
+    }))
+
+    const respuesta = await manejar(peticion({ url }))
+
+    expect(respuesta.estado).toBe(200)
+    expect(respuesta.cabeceras['Cache-Control']).toBe(cacheControl)
   })
 
   it('devuelve 404 para un estatico con extension que no existe', async () => {
