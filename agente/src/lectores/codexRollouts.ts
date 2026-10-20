@@ -64,18 +64,18 @@ export function argumentosRollout(valor: unknown): Record<string, unknown> {
 
 export function ficherosPatch(patch: string): string[] {
   const resultado: string[] = []
-  for (const coincidencia of patch.matchAll(/^\*\*\* (?:Update|Add) File: (.+)$/gm)) {
+  for (const coincidencia of patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)) {
     const ruta = coincidencia[1]?.trim()
     if (ruta !== undefined && ruta.length > 0) resultado.push(ruta)
   }
   return resultado
 }
 
-export function comandoDeCustomToolCall(input: unknown): string {
+export function comandoDeCustomToolCall(input: unknown): string | null {
   const datos = argumentosRollout(input)
   const comandoDirecto = datos.cmd ?? datos.command
   if (typeof comandoDirecto === 'string') return comandoDirecto
-  if (typeof input !== 'string') return ''
+  if (typeof input !== 'string') return null
 
   const coincidencia = /"cmd"\s*:\s*("(?:\\.|[^"\\])*")/.exec(input)
   if (coincidencia?.[1] !== undefined) {
@@ -83,10 +83,10 @@ export function comandoDeCustomToolCall(input: unknown): string {
       const comando = JSON.parse(coincidencia[1]) as unknown
       if (typeof comando === 'string') return comando
     } catch {
-      // Si la cadena está incompleta, se muestra la primera línea del input.
+      return null
     }
   }
-  return input.split(/\r?\n/, 1)[0] ?? ''
+  return null
 }
 
 export type AccionRolloutExtraida = {
@@ -109,12 +109,25 @@ export function extraerAccionRollout(valor: unknown): AccionRolloutExtraida | nu
         : null
     }
     if (payload.type === 'custom_tool_call' && payload.name === 'exec') {
+      const comando = comandoDeCustomToolCall(payload.input)
+      if (comando !== null) {
+        return { accion: accionDeToolUse('Bash', { command: comando }, fechaMs) }
+      }
+      const contenido = typeof payload.input === 'string' ? payload.input : ''
+      if (contenido.includes('*** Begin Patch')) {
+        const ficheros = ficherosPatch(contenido)
+        const nombres = ficheros.map((fichero) => path.win32.basename(path.basename(fichero)))
+        return {
+          accion: {
+            tipo: 'edicion',
+            texto: normalizarTextoAccion(nombres.join(', ')),
+            fechaMs,
+          },
+          ficherosEditados: ficheros,
+        }
+      }
       return {
-        accion: accionDeToolUse(
-          'Bash',
-          { command: comandoDeCustomToolCall(payload.input) },
-          fechaMs,
-        ),
+        accion: accionDeToolUse('Bash', { command: 'Código de herramienta' }, fechaMs),
       }
     }
     if (payload.type === 'custom_tool_call' && payload.name === 'apply_patch') {

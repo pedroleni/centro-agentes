@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import type { Agente, Proyecto } from '@centro/compartido'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EnDirecto } from '../../src/vistas/EnDirecto.js'
@@ -82,5 +84,23 @@ describe('EnDirecto', () => {
     render(<EnDirecto agentes={[]} proyectos={[proyecto]} ahora={AHORA} />)
 
     expect(screen.getByText('Ningún agente trabajando ahora mismo')).toBeTruthy()
+  })
+
+  it('separa la cabecera, la acción y el estado en tres filas', () => {
+    const { container } = render(
+      <EnDirecto agentes={[crearAgente()]} proyectos={[proyecto]} ahora={AHORA} />,
+    )
+
+    expect(container.querySelector('.ca-direct-head')).toBeTruthy()
+    expect(container.querySelector('.ca-direct-action')).toBeTruthy()
+    expect(container.querySelector('.ca-direct-state')).toBeTruthy()
+  })
+
+  it('define la rejilla amplia y el carrusel móvil sin desbordar la página', async () => {
+    const estilos = await readFile(path.join(process.cwd(), 'web', 'src', 'estilos.css'), 'utf8')
+
+    expect(estilos).toMatch(/\.ca-direct-grid\s*\{[^}]*repeat\(auto-fill,minmax\(340px,1fr\)\)/)
+    expect(estilos).toMatch(/@media \(max-width: 639px\)[\s\S]*\.ca-direct-grid\s*\{[^}]*overflow-x:auto;[^}]*scroll-snap-type:x mandatory;/)
+    expect(estilos).toMatch(/\.ca-direct-card\s*\{[^}]*width:85vw;[^}]*scroll-snap-align:start;/)
   })
 })

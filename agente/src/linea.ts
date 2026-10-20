@@ -114,6 +114,14 @@ function tipoDeAccion(accion: Accion): EventoLinea['tipo'] {
   return accion.tipo === 'mensaje' ? 'asistente' : accion.tipo
 }
 
+function esAvisoSistema(linea: Record<string, unknown>, texto: string): boolean {
+  return linea.isMeta === true
+    || texto.startsWith('<task-notification>')
+    || texto.startsWith('<system-reminder>')
+    || texto.startsWith('<command-')
+    || texto.startsWith('<local-command')
+}
+
 function eventosClaude(lineas: unknown[]): EventoLinea[] {
   const resultados = resultadosClaude(lineas)
   const eventos: EventoLinea[] = []
@@ -126,7 +134,9 @@ function eventosClaude(lineas: unknown[]): EventoLinea[] {
 
     if (linea.type === 'user') {
       for (const texto of textosDeContenido(contenido)) {
-        eventos.push({ fechaMs: fecha, tipo: 'usuario', texto: textoVisible(texto), detalle: null })
+        eventos.push(esAvisoSistema(linea, texto)
+          ? { fechaMs: fecha, tipo: 'otro', texto: 'Aviso del sistema', detalle: null }
+          : { fechaMs: fecha, tipo: 'usuario', texto: textoVisible(texto), detalle: null })
       }
       continue
     }

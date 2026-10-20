@@ -206,6 +206,56 @@ describe('leerLinea', () => {
       detalle: 'token: «oculto»',
     })
   })
+
+  it.each([
+    ['<task-notification>Terminó la tarea', false],
+    ['<system-reminder>Recuerda el contexto', false],
+    ['<command-name>prueba</command-name>', false],
+    ['<local-command-stdout>salida</local-command-stdout>', false],
+    ['Texto marcado como metadato', true],
+  ])('convierte el aviso de sistema %s en un evento neutro', async (texto, isMeta) => {
+    const ruta = await crearJsonl('aviso.jsonl', [{
+      type: 'user',
+      isMeta,
+      timestamp: '2026-10-20T08:00:00.000Z',
+      message: { content: texto },
+    }])
+
+    const resultado = await leerLinea(fuente('claude', ruta), null)
+
+    expect(resultado.eventos).toEqual([{
+      fechaMs: Date.parse('2026-10-20T08:00:00.000Z'),
+      tipo: 'otro',
+      texto: 'Aviso del sistema',
+      detalle: null,
+    }])
+  })
+
+  it('convierte un exec sin cmd en edición o código de herramienta', async () => {
+    const ruta = await crearJsonl('exec-sin-cmd.jsonl', [
+      {
+        timestamp: '2026-10-20T09:00:00.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          input: '*** Begin Patch\n*** Update File: src/uno.ts\n*** Delete File: src/dos.ts\n*** End Patch',
+        },
+      },
+      {
+        timestamp: '2026-10-20T09:01:00.000Z',
+        type: 'response_item',
+        payload: { type: 'custom_tool_call', name: 'exec', input: 'const resultado = herramienta()' },
+      },
+    ])
+
+    const resultado = await leerLinea(fuente('codex-rollout', ruta), null)
+
+    expect(resultado.eventos).toEqual([
+      expect.objectContaining({ tipo: 'edicion', texto: 'uno.ts, dos.ts' }),
+      expect.objectContaining({ tipo: 'comando', texto: 'Código de herramienta' }),
+    ])
+  })
 })
 
 describe('crearRegistroFuentes', () => {

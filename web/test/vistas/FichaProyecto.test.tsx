@@ -124,6 +124,14 @@ describe('FichaProyecto', () => {
     expect((screen.getByRole('button', { name: 'Continuar' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('enlaza la sesión y el historial con el detalle del agente', () => {
+    pintar()
+    const enlaces = screen.getAllByRole('link', { name: /Implementar la ficha de proyecto/ })
+    expect(enlaces).toHaveLength(2)
+    expect(enlaces.every((enlace) => enlace.getAttribute('href') === '#/agente/claude%3Asesion-1'))
+      .toBe(true)
+  })
+
   it('muestra el historial en tandas de cuarenta eventos', () => {
     const muchosCommits = Array.from({ length: 50 }, (_, indice): Commit => ({
       hash: `commit-${indice}`,

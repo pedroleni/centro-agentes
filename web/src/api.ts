@@ -1,4 +1,5 @@
 import { Commit, Instantanea } from '@centro/compartido'
+import { z } from 'zod'
 
 const TIEMPO_LIMITE_MS = 8_000
 
@@ -29,4 +30,38 @@ export async function obtenerCommits(id: string): Promise<Commit[]> {
       ? cuerpo.commits
       : cuerpo,
   )
+}
+
+const EventoLinea = z.object({
+  fechaMs: z.number(),
+  tipo: z.enum([
+    'usuario',
+    'asistente',
+    'comando',
+    'edicion',
+    'lectura',
+    'busqueda',
+    'subagente',
+    'pregunta',
+    'otro',
+  ]),
+  texto: z.string(),
+  detalle: z.string().nullable(),
+})
+
+const ResultadoLinea = z.object({
+  eventos: z.array(EventoLinea),
+  antes: z.number().nullable(),
+})
+
+export type EventoLinea = z.infer<typeof EventoLinea>
+export type ResultadoLinea = z.infer<typeof ResultadoLinea>
+
+export async function obtenerLinea(id: string, antes: number | null): Promise<ResultadoLinea> {
+  const parametros = antes === null ? '' : `?antes=${antes}`
+  const respuesta = await fetch(
+    `/api/agentes/${encodeURIComponent(id)}/linea${parametros}`,
+    opcionesPeticion(),
+  )
+  return ResultadoLinea.parse(await obtenerJson(respuesta))
 }

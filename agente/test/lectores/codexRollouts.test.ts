@@ -114,6 +114,41 @@ describe('crearLectorRollouts', () => {
     })
   })
 
+  it('clasifica un exec sin cmd como patch o código de herramienta', async () => {
+    const directorio = await crearDirectorioTemporal()
+    const ruta = path.join(directorio, 'rollout-exec-sin-cmd.jsonl')
+    await writeFile(ruta, [
+      {
+        timestamp: '2026-10-19T08:00:00.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'exec',
+          input: '*** Begin Patch\n*** Add File: /repo/src/nuevo.ts\n*** Delete File: /repo/src/viejo.ts\n*** End Patch',
+        },
+      },
+      {
+        timestamp: '2026-10-19T08:01:00.000Z',
+        type: 'response_item',
+        payload: { type: 'custom_tool_call', name: 'exec', input: 'await herramienta()' },
+      },
+    ].map(linea).join(''))
+
+    const resumen = await crearLectorRollouts().resumen(ruta)
+
+    expect(resumen.ultimaAccion).toEqual({
+      tipo: 'comando',
+      texto: 'Código de herramienta',
+      fechaMs: Date.parse('2026-10-19T08:01:00.000Z'),
+    })
+    expect(resumen.resumenActividad).toEqual({
+      comandos: 1,
+      ediciones: 1,
+      mensajes: 0,
+      ficheros: ['viejo.ts', 'nuevo.ts'],
+    })
+  })
+
   it('resume prompt, contexto, turno y ultima actividad con el formato real', async () => {
     const directorio = await crearDirectorioTemporal()
     const ruta = path.join(directorio, 'rollout.jsonl')

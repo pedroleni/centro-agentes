@@ -1,5 +1,6 @@
 import type { Agente } from '@centro/compartido'
 import { etiquetaEstado, nombreModelo } from '../logica/formato.js'
+import { Avatar } from './Avatar.js'
 
 type PropiedadesSesiones = {
   agentes: Agente[]
@@ -20,13 +21,14 @@ export function Sesiones({ agentes, proyectoId }: PropiedadesSesiones) {
       <h2>Sesiones</h2>
       {agentesDelProyecto.map((agente) => {
         const esClaude = agente.tipo === 'claude'
+        const href = `#/agente/${encodeURIComponent(agente.id)}`
         return (
           <article className="cd-sess" key={agente.id}>
             <div className="h">
-              <span className={`ca-av ${esClaude ? 'cl' : 'cx'}`} aria-hidden="true">
-                {esClaude ? '✱' : '◎'}
-              </span>
-              <span>{agente.titulo}</span>
+              <a className="cd-sess-link" href={href} aria-label={agente.titulo}>
+                <Avatar rol={agente.rol} estado={agente.estado} tamano={28} />
+                <span>{agente.titulo}</span>
+              </a>
               <span className={`ca-st ${claseEstado(agente)}`}><i />{etiquetaEstado(agente.estado)}</span>
             </div>
             <div className="m">

@@ -25,16 +25,16 @@ function AnilloContexto({ porcentaje }: { porcentaje: number | null }) {
   return (
     <svg
       className="ca-direct-context"
-      width="44"
-      height="44"
-      viewBox="0 0 44 44"
+      width="40"
+      height="40"
+      viewBox="0 0 40 40"
       role="img"
       aria-label={porcentaje === null ? 'Contexto desconocido' : `${porcentaje}% de contexto`}
     >
-      <circle className="fondo" cx="22" cy="22" r="17" pathLength="100" />
-      <circle className="valor" cx="22" cy="22" r="17" pathLength="100" strokeDasharray={`${valor} 100`} />
-      <text x="22" y="22">{porcentaje === null ? '?' : porcentaje}</text>
-      {porcentaje !== null && <text className="simbolo" x="22" y="29">%</text>}
+      <circle className="fondo" cx="20" cy="20" r="15" pathLength="100" />
+      <circle className="valor" cx="20" cy="20" r="15" pathLength="100" strokeDasharray={`${valor} 100`} />
+      <text x="20" y="19">{porcentaje === null ? '?' : porcentaje}</text>
+      {porcentaje !== null && <text className="simbolo" x="20" y="27">%</text>}
     </svg>
   )
 }
@@ -77,22 +77,25 @@ export function EnDirecto({ agentes, proyectos, ahora }: PropiedadesEnDirecto) {
                 className={`ca-direct-card ${familia} ${estado}`}
                 href={`#/agente/${encodeURIComponent(agente.id)}`}
               >
-                <Avatar rol={agente.rol} estado={agente.estado} tamano={88} />
-                <span className="ca-direct-info">
-                  <span className="ca-direct-role">{nombreRol(agente.rol)}</span>
-                  <strong title={agente.titulo}>{agente.titulo}</strong>
-                  <span className="ca-direct-project">{proyecto?.nombre ?? 'Sin proyecto'}</span>
-                  <span className="ca-direct-action" title={accion?.texto}>
-                    <span aria-hidden="true">{accion === null ? '💬' : ICONOS_ACCION[accion.tipo]}</span>
-                    <span>{accion?.texto ?? 'Sin acciones todavía'}</span>
-                    {accion !== null && <time>{fechaRelativa(accion.fechaMs, ahora)}</time>}
+                <span className="ca-direct-head">
+                  <Avatar rol={agente.rol} estado={agente.estado} tamano={72} />
+                  <span className="ca-direct-info">
+                    <span className="ca-direct-role">{nombreRol(agente.rol)}</span>
+                    <strong title={agente.titulo}>{agente.titulo}</strong>
+                    <span className="ca-direct-project">{proyecto?.nombre ?? 'Sin proyecto'}</span>
                   </span>
-                  <span className={`ca-direct-state ${estado}`}>
-                    <i aria-hidden="true" />
-                    {etiquetaEstado(agente.estado)} · {tiempoAgente(agente, ahora)}
-                  </span>
+                  <AnilloContexto porcentaje={porcentaje} />
                 </span>
-                <AnilloContexto porcentaje={porcentaje} />
+                <span className="ca-direct-action" title={accion?.texto}>
+                  <span aria-hidden="true">{accion === null ? '💬' : ICONOS_ACCION[accion.tipo]}</span>
+                  <span>{accion?.texto ?? 'Sin acciones todavía'}</span>
+                  {accion !== null && <time>{fechaRelativa(accion.fechaMs, ahora)}</time>}
+                </span>
+                <span className={`ca-direct-state ${estado}`}>
+                  <i aria-hidden="true" />
+                  <span>{etiquetaEstado(agente.estado)}</span>
+                  <time>{tiempoAgente(agente, ahora)}</time>
+                </span>
               </a>
             )
           })}

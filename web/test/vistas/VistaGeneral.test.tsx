@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { Agente, Instantanea, Proyecto } from '@centro/compartido'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { VistaGeneral } from '../../src/vistas/VistaGeneral.js'
 
@@ -89,9 +89,12 @@ describe('VistaGeneral', () => {
   })
 
   it('muestra el estado y el contexto del agente que trabaja', () => {
-    pintar()
-    expect(screen.getByText('Trabajando')).toBeTruthy()
-    expect(screen.getByText('11%')).toBeTruthy()
+    const { container } = pintar()
+    // El agente aparece en "En directo" y en su tarjeta: se comprueba la tarjeta.
+    const tarjeta = container.querySelector<HTMLElement>('.ca-card-clickable')
+    expect(tarjeta).not.toBeNull()
+    expect(within(tarjeta!).getByText('Trabajando')).toBeTruthy()
+    expect(within(tarjeta!).getByText('11%')).toBeTruthy()
   })
 
   it('oculta una tarjeta sin agentes esperando al activar Esperándome', () => {

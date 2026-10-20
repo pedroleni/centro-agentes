@@ -2,6 +2,7 @@ import type { Agente, Commit } from '@centro/compartido'
 import { useEffect, useState } from 'react'
 import { historialPorDia } from '../logica/historial.js'
 import { etiquetaEstado, nombreModelo } from '../logica/formato.js'
+import { Avatar } from './Avatar.js'
 
 type PropiedadesHistorial = {
   commits: Commit[]
@@ -71,7 +72,14 @@ export function Historial({ commits, agentes, proyectoId, ahora }: PropiedadesHi
                 >
                   <div className="row">
                     <span className="t">{hora(evento.fechaMs)}</span>
-                    <span className="what"><b>{tipo}</b> · {agente.titulo}</span>
+                    <a
+                      className="what cd-agent-history-link"
+                      href={`#/agente/${encodeURIComponent(agente.id)}`}
+                      aria-label={agente.titulo}
+                    >
+                      <Avatar rol={agente.rol} estado={agente.estado} tamano={28} />
+                      <span><b>{tipo}</b> · {agente.titulo}</span>
+                    </a>
                   </div>
                   <div className="sub">{detalles}</div>
                   {evento.commits.map((commit) => (
