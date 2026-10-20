@@ -79,7 +79,7 @@ export async function main(argumentos = process.argv.slice(2)): Promise<void> {
   const home = os.homedir()
   const so = sistemaOperativo(process.platform)
   const opciones = argumentos.slice(1)
-  const cfg = cargarConfig(rutaConfig(opciones), home)
+  const cfg = cargarConfig(rutaConfig(opciones), home, so, process.env)
   const rutas = rutasBase(so, home, process.env)
   const construir = () => construirInstantanea({
     cfg,

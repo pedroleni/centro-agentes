@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { normalizarRutaWindows } from '../rutas/base.js'
 
 export type HiloCodex = {
   id: string
@@ -79,7 +80,14 @@ export function leerHilosCodex(dirCodex: string, desdeMs: number): HiloCodex[] {
       )
       .all(desdeMs) as FilaHilo[]
 
-    return filas.map((fila) => ({ ...fila }))
+    // Codex en Windows puede guardar rutas largas (\\?\C:\…). Una fila sin ruta
+    // (NULL) se deja tal cual: si lanzara, el catch borraría todos los hilos.
+    const normalizar = (ruta: string): string => (typeof ruta === 'string' ? normalizarRutaWindows(ruta) : ruta)
+    return filas.map((fila) => ({
+      ...fila,
+      cwd: normalizar(fila.cwd),
+      rollout: normalizar(fila.rollout),
+    }))
   } catch {
     return []
   } finally {

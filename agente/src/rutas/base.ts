@@ -8,6 +8,17 @@ export type RutasBase = {
   temporales: string[]
 }
 
+export function normalizarRutaWindows(ruta: string): string {
+  let normalizada = ruta
+  if (normalizada.startsWith('\\\\?\\UNC\\')) {
+    normalizada = `\\\\${normalizada.slice(8)}`
+  } else if (normalizada.startsWith('\\\\?\\')) {
+    normalizada = normalizada.slice(4)
+  }
+
+  return normalizada.replace(/^([a-z]):\\/, (_, unidad: string) => `${unidad.toUpperCase()}:\\`)
+}
+
 export function rutasBase(
   so: SO,
   home: string,
