@@ -7,6 +7,7 @@ import type { ResultadoLinea } from './linea.js'
 // (4401) o que hay otra copia conectada (4409), para y lo explica.
 
 export type SocketMinimo = {
+  readyState: number
   send(datos: string): void
   close(): void
   onopen: (() => void) | null
@@ -53,8 +54,15 @@ export function crearConexionHub(o: Opciones) {
     maquina: { ...instantanea.maquina, id: o.maquinaId, nombre: o.nombre },
   })
 
+  // Solo por el socket vigente y abierto (readyState 1): mandar por uno que aún
+  // conecta o ya se ha sustituido lanza una excepción y tumbaría el agente.
   function enviar(mensaje: MensajeAgente): void {
-    socket?.send(JSON.stringify(mensaje))
+    if (socket === null || socket.readyState !== 1) return
+    try {
+      socket.send(JSON.stringify(mensaje))
+    } catch {
+      // El socket se ha cerrado entre la comprobación y el envío: se reintenta al reconectar.
+    }
   }
 
   async function enviarInstantanea(): Promise<void> {

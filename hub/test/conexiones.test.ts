@@ -115,4 +115,11 @@ describe('conexiones de agentes', () => {
     conexiones.cerrarMaquina('m1', 4401, 'revocada')
     expect(nueva.cierres).toEqual([{ codigo: 4401, motivo: 'revocada' }])
   })
+  it('impone el id y el nombre registrados aunque el agente diga otros', () => {
+    const conexiones = crearConexiones()
+    conexiones.conectar('m1', conexionFalsa().conexion)
+    const falsa = { ...instantanea, maquina: { id: 'otra', nombre: 'Suplantada', so: 'windows', avisos: [] } }
+    conexiones.recibir('m1', JSON.stringify({ tipo: 'instantanea', instantanea: falsa }))
+    expect(conexiones.vista(registradas)[0]?.instantanea?.maquina).toMatchObject({ id: 'm1', nombre: 'MacBook', so: 'macos' })
+  })
 })

@@ -1,5 +1,5 @@
 import type { RespuestaMaquinas } from '@centro/compartido'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ErrorApi, obtenerMaquinas } from './api.js'
 
 export type EstadoMaquinas = {
@@ -21,28 +21,29 @@ export function usarMaquinas(intervaloMs = 5_000): EstadoMaquinas {
   })
   const [vuelta, establecerVuelta] = useState(0)
   const recargar = useCallback(() => establecerVuelta((n) => n + 1), [])
-  const activo = useRef(true)
 
   useEffect(() => {
-    activo.current = true
+    // Bandera propia de cada ejecución del efecto: un bucle anterior (p. ej. tras
+    // recargar al entrar) no puede seguir consultando en paralelo.
+    let activo = true
     let temporizador: ReturnType<typeof setTimeout> | undefined
 
     async function actualizar(): Promise<void> {
       try {
         const datos = await obtenerMaquinas()
-        if (activo.current) establecerEstado({ datos, error: false, sinSesion: false, actualizadaMs: Date.now() })
+        if (activo) establecerEstado({ datos, error: false, sinSesion: false, actualizadaMs: Date.now() })
       } catch (error) {
-        if (!activo.current) return
+        if (!activo) return
         const sinSesion = error instanceof ErrorApi && error.estado === 401
         establecerEstado((anterior) => ({ ...anterior, error: !sinSesion, sinSesion }))
       } finally {
-        if (activo.current) temporizador = setTimeout(() => void actualizar(), intervaloMs)
+        if (activo) temporizador = setTimeout(() => void actualizar(), intervaloMs)
       }
     }
 
     void actualizar()
     return () => {
-      activo.current = false
+      activo = false
       if (temporizador !== undefined) clearTimeout(temporizador)
     }
   }, [intervaloMs, vuelta])

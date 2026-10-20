@@ -11,6 +11,7 @@ import type { Almacen } from './almacen.js'
 import {
   comprobarContrasena,
   cookieSesion,
+  crearLimitador,
   evaluarPeticion,
   hostsPermitidos,
   leerCookie,
@@ -76,6 +77,9 @@ async function pedirAgente(dep: Dependencias, maquinaId: string, peticion: Petic
 // estáticos del front (necesarios para pintar la pantalla de entrada), que solo
 // exigen Host y Tailscale.
 export function crearManejadorHub(dep: Dependencias) {
+  // Tope global de intentos de contraseña, además del de cada IP: un proceso local
+  // del Mac mini podría falsificar la IP de origen en cada intento.
+  const intentosGlobales = crearLimitador(20, 60_000)
   return async (p: PeticionHub): Promise<Respuesta> => {
     const ruta = decodificarRuta(p.url)
     if (ruta === null) return respuesta(404, 'No encontrado')
@@ -83,6 +87,7 @@ export function crearManejadorHub(dep: Dependencias) {
 
     if (p.metodo === 'POST' && ruta === '/api/alta') {
       if (p.host === undefined || !hostsPermitidos(dep.cfg).has(p.host)) return rechazo('host')
+      if (dep.cfg.exigirTailscale && p.tailscaleLogin !== dep.cfg.propietarioTailscale) return rechazo('tailscale')
       if (!dep.limitador.permitir(`alta:${p.ip}`)) return json(429, { error: 'Demasiados intentos' })
       const datos = leerJson(Alta, p.cuerpo)
       const alta = datos === null ? null : dep.almacen.canjearCodigo(datos.codigo, datos.nombre, datos.so)
@@ -107,7 +112,9 @@ export function crearManejadorHub(dep: Dependencias) {
 
     if (ruta === '/api/sesion') {
       if (p.metodo === 'POST') {
-        if (!dep.limitador.permitir(`entrada:${p.ip}`)) return json(429, { error: 'Demasiados intentos, espera un minuto' })
+        if (!dep.limitador.permitir(`entrada:${p.ip}`) || !intentosGlobales.permitir('entrada')) {
+          return json(429, { error: 'Demasiados intentos, espera un minuto' })
+        }
         const datos = leerJson(Entrada, p.cuerpo)
         if (datos === null || !comprobarContrasena(datos.contrasena, dep.cfg.contrasena)) {
           dep.almacen.auditar('entrada-fallida', { ip: p.ip })

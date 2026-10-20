@@ -8,6 +8,7 @@ import type { SO } from '@centro/compartido'
 
 const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const VIDA_CODIGO_MS = 10 * 60_000
+const MAXIMO_AUDITORIA = 10_000
 
 function sha256(texto: string): string {
   return createHash('sha256').update(texto).digest('hex')
@@ -94,7 +95,9 @@ export function crearAlmacen(ruta: string, ahora: () => number = Date.now) {
     },
 
     auditar(evento: string, detalle: Record<string, unknown>): void {
-      db.prepare('INSERT INTO auditoria (fecha_ms, evento, detalle) VALUES (?, ?, ?)').run(ahora(), evento, JSON.stringify(detalle))
+      const { lastInsertRowid } = db.prepare('INSERT INTO auditoria (fecha_ms, evento, detalle) VALUES (?, ?, ?)').run(ahora(), evento, JSON.stringify(detalle))
+      // Tope de filas: la auditoría no puede crecer sin límite.
+      db.prepare('DELETE FROM auditoria WHERE id <= ?').run(Number(lastInsertRowid) - MAXIMO_AUDITORIA)
     },
 
     ultimosEventos(n: number): { fechaMs: number; evento: string; detalle: Record<string, unknown> }[] {

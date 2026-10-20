@@ -10,6 +10,7 @@ class SocketFalso {
   onclose: ((e: { code: number }) => void) | null = null
   onerror: (() => void) | null = null
   cerrado = false
+  readyState = 1
   send(datos: string) { this.enviados.push(JSON.parse(datos)) }
   close() { this.cerrado = true }
   abrir() { this.onopen?.() }
@@ -119,6 +120,17 @@ describe('conexión con el hub', () => {
     await vi.advanceTimersByTimeAsync(60_000)
     expect(sockets).toHaveLength(1)
     expect(log).toHaveBeenCalledWith('Token revocado: vuelve a dar de alta esta máquina')
+    conexion.parar()
+  })
+  it('no envía por un socket que todavía no está abierto ni por uno sustituido', async () => {
+    vi.useFakeTimers()
+    const { conexion, sockets } = preparar()
+    conexion.arrancar()
+    const s = sockets[0]!
+    s.readyState = 0
+    s.send = () => { throw new Error('INVALID_STATE') }
+    s.llega({ tipo: 'peticion', id: '1', op: 'commits', proyectoId: 'p1' })
+    await vi.advanceTimersByTimeAsync(0)
     conexion.parar()
   })
 })

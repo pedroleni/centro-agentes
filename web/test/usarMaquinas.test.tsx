@@ -62,4 +62,20 @@ describe('usarMaquinas', () => {
     expect(result.current.error).toBe(true)
     expect(timeout).toHaveBeenCalledWith(30_000)
   })
+  it('al recargar con una petición en vuelo no deja dos bucles consultando', async () => {
+    vi.useFakeTimers()
+    let soltar: (r: Response) => void = () => {}
+    let llamadas = 0
+    vi.stubGlobal('fetch', vi.fn(() => {
+      llamadas += 1
+      if (llamadas === 1) return new Promise<Response>((r) => { soltar = r })
+      return Promise.resolve(respuesta(datos))
+    }))
+    const { result } = renderHook(() => usarMaquinas(5_000))
+    await act(async () => { result.current.recargar(); await vi.advanceTimersByTimeAsync(0) })
+    await act(async () => { soltar(respuesta(datos)); await vi.advanceTimersByTimeAsync(0) })
+    const antes = llamadas
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(llamadas - antes).toBe(1)
+  })
 })

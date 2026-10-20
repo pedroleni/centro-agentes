@@ -68,4 +68,12 @@ describe('almacén del hub', () => {
       { fechaMs: 10, evento: 'entrada', detalle: { ok: true } },
     ])
   })
+  it('conserva como mucho las 10 000 filas de auditoría más recientes', async () => {
+    let t = 0
+    const { almacen } = await nuevo(() => t)
+    for (let i = 0; i < 10_050; i += 1) { t = i; almacen.auditar('evento', { i }) }
+    const eventos = almacen.ultimosEventos(20_000)
+    expect(eventos.length).toBeLessThanOrEqual(10_000)
+    expect(eventos[0]?.detalle).toEqual({ i: 10_049 })
+  })
 })

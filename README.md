@@ -61,9 +61,10 @@ privada de **Tailscale**: nada queda expuesto a internet.
    ```bash
    tailscale serve --bg --https=443 http://127.0.0.1:4700
    ```
-6. Haz que el hub arranque solo al iniciar sesión:
+6. Haz que el hub arranque solo al iniciar sesión (ejecútalo **dentro de la
+   carpeta del repo**, porque usa `$(pwd)` como ruta):
    ```bash
-   sed "s|__REPO__|$HOME/centro-agentes|; s|__HOME__|$HOME|g" scripts/servicios/es.centro-agentes.hub.plist > ~/Library/LaunchAgents/es.centro-agentes.hub.plist
+   sed "s|__REPO__|$(pwd)|; s|__HOME__|$HOME|g" scripts/servicios/es.centro-agentes.hub.plist > ~/Library/LaunchAgents/es.centro-agentes.hub.plist
    launchctl load -w ~/Library/LaunchAgents/es.centro-agentes.hub.plist
    ```
 7. Abre `https://mac-mini.tailXXXX.ts.net` desde cualquier dispositivo de tu
@@ -76,15 +77,16 @@ privada de **Tailscale**: nada queda expuesto a internet.
 2. En la máquina, ejecuta los comandos que te muestra el panel (clonar,
    `npm install`, `npm run agente:alta -- --hub https://… --codigo …`). Si
    esa máquina ya tiene el repo, basta con el `agente:alta`.
-3. Haz que el agente arranque solo al iniciar sesión:
+3. Haz que el agente arranque solo al iniciar sesión (ejecútalo **dentro de la
+   carpeta del repo**: en tu MacBook es `~/Desktop/Proyectos IA/centro-agentes`):
    ```bash
-   sed "s|__REPO__|$HOME/centro-agentes|; s|__HOME__|$HOME|g" scripts/servicios/es.centro-agentes.agente.plist > ~/Library/LaunchAgents/es.centro-agentes.agente.plist
+   sed "s|__REPO__|$(pwd)|; s|__HOME__|$HOME|g" scripts/servicios/es.centro-agentes.agente.plist > ~/Library/LaunchAgents/es.centro-agentes.agente.plist
    launchctl load -w ~/Library/LaunchAgents/es.centro-agentes.agente.plist
    ```
-4. **Permisos de macOS**: la primera vez, macOS preguntará si `node` puede
-   acceder a Escritorio, Documentos y Descargas. Acepta. Si no pregunta, ve a
-   **Ajustes del Sistema → Privacidad y seguridad → Archivos y carpetas** y
-   actívalo para `node`.
+4. **Permisos de macOS**: la primera vez, macOS preguntará si `node` (y `zsh`,
+   si el repo está dentro de Escritorio, Documentos o Descargas) puede acceder
+   a esas carpetas. Acepta. Si no pregunta, ve a **Ajustes del Sistema →
+   Privacidad y seguridad → Archivos y carpetas** y actívalo para los dos.
 5. En unos segundos la máquina aparece en el panel como **● Conectada**.
 
 Los registros quedan en `~/Library/Logs/centro-agentes-hub.log` y

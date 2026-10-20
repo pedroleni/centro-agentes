@@ -82,7 +82,7 @@ describe('API del hub', () => {
     const cookie = await entrar()
     const codigo = cuerpo(await pedir({ metodo: 'POST', url: '/api/maquinas/codigos', cookie, origin: ORIGEN })) as { codigo: string }
     const alta = await pedir({
-      metodo: 'POST', url: '/api/alta', tailscaleLogin: undefined,
+      metodo: 'POST', url: '/api/alta',
       cuerpo: JSON.stringify({ codigo: codigo.codigo, nombre: 'MacBook', so: 'macos' }),
     })
     expect(alta.estado).toBe(200)
@@ -91,7 +91,7 @@ describe('API del hub', () => {
     expect(lista.estado).toBe(200)
     expect(cuerpo(lista)).toMatchObject({ modo: 'hub', maquinas: [{ id: maquinaId, nombre: 'MacBook', conectada: false }] })
     expect(String(lista.cuerpo)).not.toContain(token)
-    expect((await pedir({ metodo: 'POST', url: '/api/alta', tailscaleLogin: undefined, cuerpo: JSON.stringify({ codigo: codigo.codigo, nombre: 'X', so: 'macos' }) })).estado).toBe(400)
+    expect((await pedir({ metodo: 'POST', url: '/api/alta', cuerpo: JSON.stringify({ codigo: codigo.codigo, nombre: 'X', so: 'macos' }) })).estado).toBe(400)
   })
 
   it('pide commits y línea al agente y traduce sus errores a 502, 504 y 404', async () => {
@@ -143,5 +143,27 @@ describe('API del hub', () => {
     expect((await pedir({ metodo: 'PUT', url: '/api/maquinas', cookie, origin: ORIGEN })).estado).toBe(405)
     expect((await pedir({ metodo: 'DELETE', url: '/api/sesion', cookie, origin: ORIGEN })).estado).toBe(204)
     expect((await pedir({ url: '/api/maquinas', cookie })).estado).toBe(401)
+  })
+  it('con Tailscale exigido, el alta desde otra identidad o sin ella da 403', async () => {
+    const { pedir, almacen } = await preparar()
+    const { codigo } = almacen.crearCodigoAlta()
+    const cuerpo = JSON.stringify({ codigo, nombre: 'Intruso', so: 'macos' })
+    expect((await pedir({ metodo: 'POST', url: '/api/alta', tailscaleLogin: 'otro@example.com', cuerpo })).estado).toBe(403)
+    expect((await pedir({ metodo: 'POST', url: '/api/alta', tailscaleLogin: undefined, cuerpo })).estado).toBe(403)
+    expect(almacen.listarMaquinas()).toHaveLength(0)
+  })
+  it('limita también los intentos fallidos de contraseña en global, aunque cambie la IP', async () => {
+    const { pedir } = await preparar()
+    let ultimo = 0
+    for (let i = 0; i < 21; i += 1) {
+      ultimo = (await pedir({ metodo: 'POST', url: '/api/sesion', origin: ORIGEN, ip: `10.0.0.${i}`, cuerpo: JSON.stringify({ contrasena: 'mala' }) })).estado
+    }
+    expect(ultimo).toBe(429)
+  })
+
+  it('manda la cabecera anti-clickjacking', async () => {
+    const { pedir } = await preparar()
+    const r = await pedir({ url: '/' })
+    expect(r.cabeceras['Content-Security-Policy']).toContain("frame-ancestors 'none'")
   })
 })

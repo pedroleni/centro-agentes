@@ -36,7 +36,8 @@ function dependencias(
 }
 
 const cabecerasSeguridad = {
-  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'",
+  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 }

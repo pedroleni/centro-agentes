@@ -5,6 +5,8 @@ const TIEMPO_LIMITE_MS = 8_000
 // La primera instantánea tras arrancar el agente lee los transcripts enteros y
 // puede tardar varios segundos con transcripts de cientos de MB.
 const TIEMPO_LIMITE_INSTANTANEA_MS = 30_000
+// Más que los 10 s que el hub espera a la máquina, para que llegue su 504.
+const TIEMPO_LIMITE_MAQUINA_MS = 15_000
 
 function opcionesPeticion(limiteMs = TIEMPO_LIMITE_MS): RequestInit {
   return { signal: AbortSignal.timeout(limiteMs) }
@@ -58,7 +60,7 @@ export async function obtenerMaquinas(): Promise<RespuestaMaquinas> {
 export async function obtenerCommitsDe(maquinaId: string, proyectoId: string): Promise<Commit[]> {
   const respuesta = await fetch(
     `/api/maquinas/${encodeURIComponent(maquinaId)}/proyectos/${encodeURIComponent(proyectoId)}/commits`,
-    opcionesPeticion(),
+    opcionesPeticion(TIEMPO_LIMITE_MAQUINA_MS),
   )
   return z.object({ commits: z.array(Commit) }).parse(await obtenerJson(respuesta)).commits
 }
@@ -67,7 +69,7 @@ export async function obtenerLineaDe(maquinaId: string, agenteId: string, antes:
   const parametros = antes === null ? '' : `?antes=${antes}`
   const respuesta = await fetch(
     `/api/maquinas/${encodeURIComponent(maquinaId)}/agentes/${encodeURIComponent(agenteId)}/linea${parametros}`,
-    opcionesPeticion(),
+    opcionesPeticion(TIEMPO_LIMITE_MAQUINA_MS),
   )
   return ResultadoLinea.parse(await obtenerJson(respuesta))
 }

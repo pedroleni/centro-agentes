@@ -38,6 +38,12 @@ type Pendiente = {
 type DistribuirSinId<T> = T extends unknown ? Omit<T, 'id' | 'tipo'> : never
 export type PeticionSinId = DistribuirSinId<Peticion>
 
+// La identidad de la máquina la decide el hub (alta), no lo que diga el agente.
+function imponerMaquina(instantanea: Instantanea | null, maquina: { id: string; nombre: string; so: SO }): Instantanea | null {
+  if (instantanea === null) return null
+  return { ...instantanea, maquina: { ...instantanea.maquina, id: maquina.id, nombre: maquina.nombre, so: maquina.so } }
+}
+
 export function crearConexiones(ahora: () => number = Date.now) {
   const activas = new Map<string, ConexionAgente>()
   const latidos = new Map<string, number>()
@@ -121,7 +127,7 @@ export function crearConexiones(ahora: () => number = Date.now) {
           so: maquina.so,
           conectada: activas.has(maquina.id) && latido !== null && ahora() - latido < LATIDO_MAXIMO_MS,
           ultimoLatidoMs: latido,
-          instantanea: instantaneas.get(maquina.id) ?? null,
+          instantanea: imponerMaquina(instantaneas.get(maquina.id) ?? null, maquina),
         }
       })
     },
