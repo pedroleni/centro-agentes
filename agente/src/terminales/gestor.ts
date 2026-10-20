@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
@@ -136,9 +136,19 @@ export function crearGestorTerminales(dep: {
     const yaAbierto = orden.agenteId === null ? undefined : abiertos.find((t) => t.agenteId === orden.agenteId)
     if (yaAbierto !== undefined) return yaAbierto
     if (abiertos.length >= maximo) throw new Error(`Ya hay ${maximo} terminales abiertos en esta máquina`)
-    const id = randomBytes(6).toString('hex')
-    // tmux expande formatos (#{…}) en la carpeta de -c: `##` es un # literal.
-    await tmux(['new-session', '-d', '-s', sesion(id), '-c', orden.cwd.replaceAll('#', '##'), '-x', '120', '-y', '32', '--', ...orden.argv])
+    // Al continuar, el nombre sale de la sesión: si otro proceso (panel y
+    // conectar comparten tmux) la abre a la vez, tmux rechaza el duplicado.
+    const id = orden.agenteId === null
+      ? randomBytes(6).toString('hex')
+      : createHash('sha256').update(orden.agenteId).digest('hex').slice(0, 12)
+    try {
+      // tmux expande formatos (#{…}) en la carpeta de -c: `##` es un # literal.
+      await tmux(['new-session', '-d', '-s', sesion(id), '-c', orden.cwd.replaceAll('#', '##'), '-x', '120', '-y', '32', '--', ...orden.argv])
+    } catch (error) {
+      const otro = (await listar()).find((terminal) => terminal.id === id)
+      if (otro !== undefined) return otro
+      throw error
+    }
     const opciones: [string, string][] = [
       ['window-size', 'latest'],
       ['status', 'off'],

@@ -75,6 +75,29 @@ describe('gestor de terminales', () => {
     expect(sesiones.size).toBe(6)
   })
 
+  it('dos procesos (panel y conectar) que continúan la misma sesión a la vez acaban en un solo terminal', async () => {
+    // tmux compartido entre dos gestores con colas distintas: new-session falla si el nombre ya existe.
+    const sesiones = new Map<string, Record<string, string>>()
+    const tmux = vi.fn(async (args: string[]) => {
+      await new Promise((r) => setTimeout(r, 1))
+      if (args[0] === 'list-sessions') {
+        return [...sesiones].map(([n, o]) => [n, '1', o['@ca_titulo'] ?? '', o['@ca_tipo'] ?? '', o['@ca_agente'] ?? '', o['@ca_proyecto'] ?? ''].join('\t')).join('\n')
+      }
+      if (args[0] === 'new-session') {
+        if (sesiones.has(args[3]!)) throw new Error(`duplicate session: ${args[3]}`)
+        sesiones.set(args[3]!, {})
+      }
+      if (args[0] === 'set-option') sesiones.get(args[2]!.replace(/^=/, '').replace(/:$/, ''))![args[3]!] = args[4]!
+      return ''
+    })
+    const panel = crearGestorTerminales({ tmux, abrirPty: falsos().abrirPty })
+    const conectar = crearGestorTerminales({ tmux, abrirPty: falsos().abrirPty })
+    const continuar = { ...orden, agenteId: 'claude:323ca3f4-7985-4de1-869d-e6b0dc0cace0' }
+    const [a, b] = await Promise.all([panel.crear(continuar), conectar.crear(continuar)])
+    expect(a.id).toBe(b.id)
+    expect(sesiones.size).toBe(1)
+  })
+
   it('los terminales no heredan las variables de npm ni NODE_OPTIONS del agente', () => {
     expect(entornoTerminal({ PATH: '/bin', HOME: '/Users/p', NODE_OPTIONS: '--experimental-sqlite', npm_config_cache: '/x', npm_lifecycle_event: 'panel' }))
       .toEqual({ PATH: '/bin', HOME: '/Users/p', TERM: 'xterm-256color' })
