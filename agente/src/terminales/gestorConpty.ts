@@ -33,11 +33,14 @@ type TerminalConpty = {
 }
 
 const MODO_PRIVADO = /\u001b\[\?([\d;]+)([hl])/g
+// Solo los modos que importan al volver a entrar; una salida binaria podría
+// inventarse miles y el prefijo crecería sin límite.
+const MODOS_CONOCIDOS = new Set(['1', '7', '25', '47', '1000', '1002', '1003', '1004', '1005', '1006', '1015', '1047', '1048', '1049', '2004', '2026'])
 
 function apuntarModos(terminal: TerminalConpty, datos: string): void {
   for (const [, numeros = '', valor] of datos.matchAll(MODO_PRIVADO)) {
     for (const numero of numeros.split(';')) {
-      if (numero === '') continue
+      if (!MODOS_CONOCIDOS.has(numero)) continue
       // Se borra antes para que el orden refleje el último cambio.
       terminal.modos.delete(numero)
       terminal.modos.set(numero, valor as 'h' | 'l')
@@ -155,9 +158,10 @@ export function crearGestorTerminalesConpty(dep: {
         guardarSalida(terminal, datos, memoria)
         for (const enganche of [...terminal.enganches]) enganche.alDatos(datos)
       })
+      // Al terminar solo NO se llama a kill: en Windows node-pty acabaría matando
+      // por PID a los 5 s, y ese PID ya puede ser de otro proceso (incluso de un
+      // git del propio agente).
       pty.onExit(() => {
-        // Al terminar solo, node-pty no cierra la pseudoconsola: quedaría un conhost.
-        sinFallo(() => pty.kill())
         terminales.delete(id)
         for (const enganche of [...terminal.enganches]) enganche.alSalir()
         terminal.enganches.clear()
@@ -222,6 +226,20 @@ export function crearGestorTerminalesConptyReal(): GestorTerminales {
   })
 }
 
+// Texto legible de la salida de un terminal: sin títulos de ventana (OSC), con
+// cada salto de posición del cursor como salto de línea y sin líneas vacías.
+export function limpiarSalidaTerminal(salida: string): string {
+  return salida
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '')
+    .replace(/\u001b\[\d*(?:;\d*)?H/g, '\n')
+    .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((linea) => linea.trim())
+    .filter((linea) => linea !== '')
+    .join('\n')
+}
+
 // Prueba real de ConPTY para el diagnóstico: abre PowerShell igual que un
 // terminal del panel y pregunta dónde están claude y codex y qué política de
 // ejecución tiene. Si en 10 s no termina, no está disponible.
@@ -234,11 +252,14 @@ export function probarConptyReal(): Promise<{ disponible: boolean; detalle: stri
       if (terminado) return
       terminado = true
       clearTimeout(limite)
-      sinFallo(() => proceso.kill())
-      const detalle = salida.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '').replace(/\r/g, '').trim()
+      const detalle = limpiarSalidaTerminal(salida)
       resolver({ disponible, detalle: detalle === '' ? null : detalle })
     }
-    const limite = setTimeout(() => acabar(false), 10_000)
+    // Solo se mata si sigue vivo al agotar el tiempo (ver onExit del gestor).
+    const limite = setTimeout(() => {
+      sinFallo(() => proceso.kill())
+      acabar(false)
+    }, 10_000)
     try {
       const pty = createRequire(import.meta.url)('node-pty') as typeof import('node-pty')
       proceso = pty.spawn('powershell.exe', ['-NoLogo', '-Command', '(Get-Command claude,codex -ErrorAction SilentlyContinue).Source; Get-ExecutionPolicy'], {

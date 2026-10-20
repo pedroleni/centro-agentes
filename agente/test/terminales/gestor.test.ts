@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { crearGestorTerminales, entornoTerminal, type PtyMinimo } from '../../src/terminales/gestor.js'
+import { esperarA } from '../ayudas/esperar.js'
 
 const orden = { cwd: '/tmp', argv: ['/bin/zsh', '-lc', 'exec claude'], titulo: 'Claude · prueba', tipo: 'claude' as const, agenteId: null, proyectoId: 'aaaaaaaaaaaa' }
 
@@ -172,8 +173,7 @@ describe.skipIf(sinTmux)('gestor de terminales con tmux real', () => {
     const info = await gestor.crear({ ...orden, argv: ['/bin/sh', '-c', 'echo hola-terminal; sleep 5'] })
     let salida = ''
     const enganche = gestor.adjuntar(info.id, { cols: 80, rows: 24 }, (d) => { salida += d }, () => {})
-    await new Promise((r) => setTimeout(r, 1_000))
-    expect(salida).toContain('hola-terminal')
+    await esperarA(() => salida.includes('hola-terminal'))
     expect((await gestor.listar()).find((t) => t.id === info.id)?.titulo).toBe('Claude · prueba')
     enganche.soltar()
     await gestor.cerrar(info.id)
@@ -187,8 +187,9 @@ describe.skipIf(sinTmux)('gestor de terminales con tmux real', () => {
     temporales.push(carpeta, fuera)
     const gestor = crearGestorTerminalesReal(socket)
     const info = await gestor.crear({ ...orden, cwd: carpeta, argv: ['/bin/sh', '-c', `pwd -P > ${fuera}/pwd.txt; sleep 5`] })
-    await new Promise((r) => setTimeout(r, 800))
-    expect((await readFile(path.join(fuera, 'pwd.txt'), 'utf8')).trim()).toBe(await realpath(carpeta))
+    const leido = () => readFile(path.join(fuera, 'pwd.txt'), 'utf8').catch(() => '')
+    await esperarA(async () => (await leido()).trim() !== '')
+    expect((await leido()).trim()).toBe(await realpath(carpeta))
     await gestor.cerrar(info.id)
   })
 })

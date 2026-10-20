@@ -30,7 +30,10 @@ describe('servicios de Windows', () => {
     const script = leer('agente-windows.ps1')
     expect(script).toContain('while ($true)')
     expect(script).toContain('if ($LASTEXITCODE -eq 0)')
-    expect(script).toContain('Start-Sleep -Seconds 10')
+    // Espera creciente (10 s → 5 min) para no relanzar npm cada 10 s sin fin si el
+    // error es permanente; vuelve a 10 s si el agente aguantó más de un minuto.
+    expect(script).toContain('Start-Sleep -Seconds $Espera')
+    expect(script).toContain('[Math]::Min($Espera * 2, 300)')
   })
 
   it('la tarea programada no caduca y se reinicia si falla', () => {

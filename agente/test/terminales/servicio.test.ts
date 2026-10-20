@@ -62,7 +62,7 @@ describe('crearTerminalPedido', () => {
 
   it('si la carpeta ya no existe (sesión movida o borrada) no intenta abrir nada', async () => {
     const crear = vi.fn(async () => info)
-    const r = await crearTerminalPedido({ accion: 'continuar', agenteId: agente.id }, instantanea, gestor(crear), { existeCarpeta: () => false })
+    const r = await crearTerminalPedido({ accion: 'continuar', agenteId: agente.id }, instantanea, gestor(crear), { existeCarpeta: async () => false })
     expect(r).toEqual({ ok: false, estado: 400, error: 'La carpeta ya no existe en esta máquina' })
     expect(crear).not.toHaveBeenCalled()
   })

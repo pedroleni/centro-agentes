@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PtyMinimo } from '../../src/terminales/gestor.js'
-import { crearGestorTerminalesConpty, type AbrirPtyConpty } from '../../src/terminales/gestorConpty.js'
+import { crearGestorTerminalesConpty, limpiarSalidaTerminal, type AbrirPtyConpty } from '../../src/terminales/gestorConpty.js'
 
 const orden = {
   cwd: 'C:\\Users\\pedro\\web',
@@ -160,12 +160,23 @@ describe('gestor de terminales ConPTY', () => {
     expect(() => enganche.escribir('ls\r')).not.toThrow()
   })
 
-  it('al terminar el proceso cierra también su pseudoconsola', async () => {
+  it('al terminar el proceso solo no llama a kill (node-pty mataría por un PID que ya puede ser de otro)', async () => {
     const f = falsos()
     const gestor = crearGestorTerminalesConpty({ abrirPty: f.abrirPty })
     await gestor.crear(orden)
     f.procesos[0]!.emitirSalida(0)
-    expect(f.procesos[0]!.pty.kill).toHaveBeenCalled()
+    expect(f.procesos[0]!.pty.kill).not.toHaveBeenCalled()
+  })
+
+  it('solo recuerda los modos de terminal conocidos', async () => {
+    const f = falsos()
+    const gestor = crearGestorTerminalesConpty({ abrirPty: f.abrirPty, memoria: 1_024 })
+    const info = await gestor.crear(orden)
+    f.procesos[0]!.emitirDatos('\u001b[?2004h\u001b[?12345h\u001b[?99;1049h')
+    f.procesos[0]!.emitirDatos(`${'x'.repeat(2_000)}\nfin`)
+    let recibido = ''
+    gestor.adjuntar(info.id, { cols: 80, rows: 24 }, (datos) => { recibido += datos }, () => {})
+    expect(recibido).toBe('\u001b[?2004h\u001b[?1049hfin')
   })
 
   it('al volver tras mucha salida conserva los modos del terminal y empieza en una línea entera', async () => {
@@ -191,5 +202,10 @@ describe('gestor de terminales ConPTY', () => {
     let recibido = ''
     gestor.adjuntar(info.id, { cols: 80, rows: 24 }, (datos) => { recibido += datos }, () => {})
     expect(recibido).toBe('hola\u001b[?1049h pantalla')
+  })
+
+  it('limpia la salida de un terminal para leerla como texto', () => {
+    const salida = '\u001b]0;Windows PowerShell\u0007C:\\nvm\\claude.cmd\u001b[2;1HC:\\nvm\\codex.cmd\r\nRemoteSigned\u001b[?25h\r\n\r\n'
+    expect(limpiarSalidaTerminal(salida)).toBe('C:\\nvm\\claude.cmd\nC:\\nvm\\codex.cmd\nRemoteSigned')
   })
 })

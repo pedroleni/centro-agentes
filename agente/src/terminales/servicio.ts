@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import type { Instantanea, TerminalInfo } from '@centro/compartido'
 import type { GestorTerminales } from './gestor.js'
 import { ordenTerminal } from './ordenes.js'
@@ -15,9 +15,11 @@ export type ResultadoTerminal =
   | { ok: true; terminal: TerminalInfo }
   | { ok: false; estado: 400 | 404 | 409 | 429 | 500; error: string }
 
-function carpetaExiste(ruta: string): boolean {
+// Asíncrono: con una carpeta de red caída, un stat síncrono congelaría el agente
+// (y su conexión con el hub) durante todo el tiempo de espera de SMB.
+async function carpetaExiste(ruta: string): Promise<boolean> {
   try {
-    return statSync(ruta).isDirectory()
+    return (await stat(ruta)).isDirectory()
   } catch {
     return false
   }
@@ -27,7 +29,7 @@ export async function crearTerminalPedido(
   pedido: PedidoTerminal,
   instantanea: Pick<Instantanea, 'maquina' | 'agentes' | 'proyectos' | 'terminales'>,
   gestor: Pick<GestorTerminales, 'crear'>,
-  opciones: { existeCarpeta?(ruta: string): boolean } = {},
+  opciones: { existeCarpeta?(ruta: string): boolean | Promise<boolean> } = {},
 ): Promise<ResultadoTerminal> {
   let orden
   if (pedido.accion === 'continuar') {
@@ -48,7 +50,7 @@ export async function crearTerminalPedido(
   }
   // Una sesión de hace días puede apuntar a una carpeta movida o borrada. En
   // Windows, node-pty crea la pseudoconsola antes de fallar y no la libera.
-  if (!(opciones.existeCarpeta ?? carpetaExiste)(orden.cwd)) {
+  if (!(await (opciones.existeCarpeta ?? carpetaExiste)(orden.cwd))) {
     return { ok: false, estado: 400, error: 'La carpeta ya no existe en esta máquina' }
   }
   try {
