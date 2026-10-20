@@ -24,7 +24,8 @@
     "hub": "npm run build:web && NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx hub/src/cli.ts servir",
     "hub:configurar": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx hub/src/cli.ts configurar",
     "agente:alta": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts alta",
-    "agente:conectar": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts conectar"
+    "agente:conectar": "NODE_OPTIONS='--experimental-sqlite --no-warnings=ExperimentalWarning' tsx agente/src/cli.ts conectar",
+    "postinstall": "node scripts/permisos-node-pty.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
