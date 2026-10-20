@@ -5,6 +5,7 @@ import { nombreRol } from '../logica/roles.js'
 import { Avatar } from './Avatar.js'
 import { LineaTiempo } from './LineaTiempo.js'
 import { rutaProyecto } from '../logica/rutas.js'
+import { BotonTerminal } from './BotonTerminal.js'
 
 type PropiedadesDetalleAgente = {
   agente: Agente | null
@@ -79,6 +80,11 @@ export function DetalleAgente({
             {nombreModelo(agente.modelo) !== '' && <span>{nombreModelo(agente.modelo)}</span>}
             {agente.esfuerzo !== null && <span>Esfuerzo {agente.esfuerzo}</span>}
           </div>
+          {agente.puedeContinuar && maquinaId !== null && (
+            <BotonTerminal maquinaId={maquinaId} pedido={{ accion: 'continuar', agenteId: agente.id }}>
+              ▶ Continuar aquí
+            </BotonTerminal>
+          )}
         </div>
         <AnilloContexto porcentaje={porcentaje} />
         <div className={`da-estado ${estado}`}>

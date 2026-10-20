@@ -370,4 +370,13 @@ describe('construirInstantanea', () => {
     expect(tarea!.id).toMatch(/^codex-tarea:[0-9a-f]{16}$/)
     expect(fuentes.get(tarea!.id)).toMatchObject({ tipo: 'codex-log' })
   })
+  it('incluye los terminales abiertos que le pasa el gestor', async () => {
+    const hogar = await preparar()
+    const terminal = { id: '0123456789ab', titulo: 'Claude · a', tipo: 'claude' as const, agenteId: null, proyectoId: null, creadoMs: 1 }
+    const instantanea = await construirInstantanea({
+      cfg: hogar.cfg, rutas: hogar.rutas, so: 'macos', ahoraMs: hogar.ahoraMs, pidVivo: () => false, ejecutar: async () => '',
+      listarTerminales: async () => [terminal],
+    })
+    expect(instantanea.terminales).toEqual([terminal])
+  })
 })

@@ -137,11 +137,22 @@ export const Maquina = z.object({
 })
 export type Maquina = z.infer<typeof Maquina>
 
+export const TerminalInfo = z.object({
+  id: z.string().regex(/^[0-9a-f]{12}$/),
+  titulo: z.string(),
+  tipo: z.enum(['claude', 'codex']),
+  agenteId: z.string().nullable(),
+  proyectoId: z.string().nullable(),
+  creadoMs: z.number(),
+})
+export type TerminalInfo = z.infer<typeof TerminalInfo>
+
 export const Instantanea = z.object({
   version: z.literal(1),
   maquina: Maquina,
   generadaMs: z.number(),
   proyectos: z.array(Proyecto),
   agentes: z.array(Agente),
+  terminales: z.array(TerminalInfo).optional(),
 })
 export type Instantanea = z.infer<typeof Instantanea>

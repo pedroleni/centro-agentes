@@ -3,8 +3,8 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Agente, Commit, Proyecto } from '@centro/compartido'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FichaProyecto } from '../../src/vistas/FichaProyecto.js'
 
 const AHORA = new Date(2026, 9, 20, 12).getTime()
@@ -91,7 +91,7 @@ const commits: Commit[] = [
 
 function pintar() {
   return render(
-    <FichaProyecto proyecto={proyecto} agentes={[agente]} commits={commits} ahora={AHORA} />,
+    <FichaProyecto proyecto={proyecto} agentes={[agente]} commits={commits} ahora={AHORA} maquinaId="aaaaaaaaaaaa" />,
   )
 }
 
@@ -119,16 +119,32 @@ describe('FichaProyecto', () => {
     expect(screen.getByText('Puede estar desactualizado')).toBeTruthy()
   })
 
-  it('ofrece Continuar desactivado cuando la sesión puede retomarse', () => {
+  it('ofrece "Continuar aquí" activo, que crea el terminal y lleva a él', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => ({ ok: true, status: 201, json: async () => ({ id: '0123456789ab', titulo: 'x', tipo: 'claude', agenteId: null, proyectoId: null, creadoMs: 1 }) }) as Response)
+    vi.stubGlobal('fetch', fetch)
     pintar()
-    expect((screen.getByRole('button', { name: 'Continuar' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Continuar aquí/ })); await Promise.resolve(); await Promise.resolve() })
+    expect(fetch.mock.calls[0]?.[0]).toBe('/api/maquinas/aaaaaaaaaaaa/terminales')
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({ accion: 'continuar' })
+    expect(window.location.hash).toBe('#/m/aaaaaaaaaaaa/terminal/0123456789ab')
+    vi.unstubAllGlobals()
+  })
+
+  it('abre una sesión nueva de Claude en el proyecto', async () => {
+    const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => ({ ok: true, status: 201, json: async () => ({ id: 'abcdefabcdef', titulo: 'x', tipo: 'claude', agenteId: null, proyectoId: null, creadoMs: 1 }) }) as Response)
+    vi.stubGlobal('fetch', fetch)
+    pintar()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Nueva sesión de Claude' })); await Promise.resolve(); await Promise.resolve() })
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({ accion: 'nueva', tipo: 'claude' })
+    expect(window.location.hash).toBe('#/m/aaaaaaaaaaaa/terminal/abcdefabcdef')
+    vi.unstubAllGlobals()
   })
 
   it('enlaza la sesión y el historial con el detalle del agente', () => {
     pintar()
     const enlaces = screen.getAllByRole('link', { name: /Implementar la ficha de proyecto/ })
     expect(enlaces).toHaveLength(2)
-    expect(enlaces.every((enlace) => enlace.getAttribute('href') === '#/agente/claude%3Asesion-1'))
+    expect(enlaces.every((enlace) => enlace.getAttribute('href') === '#/m/aaaaaaaaaaaa/agente/claude%3Asesion-1'))
       .toBe(true)
   })
 

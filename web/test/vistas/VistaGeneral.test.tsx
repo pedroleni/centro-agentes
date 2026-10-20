@@ -213,4 +213,11 @@ describe('VistaGeneral', () => {
       expect(screen.queryByRole('button', { name: /Añadir máquina/ })).toBeNull()
     })
   })
+
+  it('lista los terminales abiertos de cada máquina con un enlace para entrar', () => {
+    const datos = { ...crearInstantanea(), terminales: [{ id: '0123456789ab', titulo: 'Claude · centro-agentes', tipo: 'claude' as const, agenteId: null, proyectoId: null, creadoMs: AHORA - 60_000 }] }
+    render(<VistaGeneral respuesta={local(datos)} error={false} actualizadaMs={AHORA} ahora={AHORA} />)
+    const enlace = screen.getByRole('link', { name: /Entrar en Claude · centro-agentes/ })
+    expect(enlace.getAttribute('href')).toBe('#/m/aaaaaaaaaaaa/terminal/0123456789ab')
+  })
 })

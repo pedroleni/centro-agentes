@@ -1,13 +1,18 @@
 import { MensajeHub, type Commit, type Instantanea, type MensajeAgente } from '@centro/compartido'
 import type { ResultadoLinea } from './linea.js'
+import type { Enganche, GestorTerminales } from './terminales/gestor.js'
+import type { PedidoTerminal, ResultadoTerminal } from './terminales/servicio.js'
 
 // Conexión saliente del agente con el hub. El agente saluda, manda su instantánea
-// cada 5 s y solo contesta las dos peticiones de lectura del protocolo. Si la
-// conexión cae, reintenta con backoff; si el hub dice que el token está revocado
-// (4401) o que hay otra copia conectada (4409), para y lo explica.
+// cada 5 s y contesta las peticiones del protocolo: lecturas (commits y línea) y
+// terminales, que se crean siempre con las órdenes cerradas del propio agente a
+// partir de ids de su instantánea. Si la conexión cae, reintenta con backoff; si
+// el hub dice que el token está revocado (4401) o que hay otra copia conectada
+// (4409), para y lo explica.
 
 export type SocketMinimo = {
   readyState: number
+  bufferedAmount?: number
   send(datos: string): void
   close(): void
   onopen: (() => void) | null
@@ -16,8 +21,21 @@ export type SocketMinimo = {
   onerror: (() => void) | null
 }
 
+export type TerminalesHub = {
+  crear(pedido: PedidoTerminal): Promise<ResultadoTerminal>
+  cerrar(terminalId: string): Promise<void>
+  adjuntar: GestorTerminales['adjuntar']
+}
+
 const ESPERAS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
+const MAXIMO_CANALES = 16
+// Si el enlace con el hub no da abasto, se suelta el canal en vez de acumular
+// salida en memoria: el navegador reconecta y tmux repinta la pantalla.
+const MAXIMO_PENDIENTE_HUB = 8 * 1024 * 1024
+// 48 KiB por mensaje: en base64 son 64 K caracteres, bajo el límite del protocolo.
+const TROZO_SALIDA = 48 * 1024
 const ESTABLE_MS = 60_000
+const APERTURA_MAXIMA_MS = 15_000
 const INTERVALO_INSTANTANEA_MS = 5_000
 
 export function urlWebSocket(hub: string): string {
@@ -34,6 +52,7 @@ type Opciones = {
   obtenerInstantanea(): Promise<Instantanea>
   obtenerCommits(proyectoId: string): Promise<Commit[] | null>
   obtenerLinea(agenteId: string, antes: number | null): Promise<ResultadoLinea | null>
+  terminales?: TerminalesHub
   crearSocket(url: string, token: string): SocketMinimo
   aleatorio?: () => number
   log?: (mensaje: string) => void
@@ -48,6 +67,8 @@ export function crearConexionHub(o: Opciones) {
   let latido: ReturnType<typeof setInterval> | null = null
   let reintento: ReturnType<typeof setTimeout> | null = null
   let estable: ReturnType<typeof setTimeout> | null = null
+  // Terminales que el hub tiene enganchados, por canal.
+  const canales = new Map<string, Enganche>()
 
   const conIdDelHub = (instantanea: Instantanea): Instantanea => ({
     ...instantanea,
@@ -73,6 +94,64 @@ export function crearConexionHub(o: Opciones) {
     }
   }
 
+  function enviarSalida(canal: string, texto: string): void {
+    const bytes = Buffer.from(texto, 'utf8')
+    for (let inicio = 0; inicio < bytes.length; inicio += TROZO_SALIDA) {
+      enviar({ tipo: 'terminal-salida', canal, datos: bytes.subarray(inicio, inicio + TROZO_SALIDA).toString('base64') })
+    }
+  }
+
+  function adjuntar(canal: string, terminalId: string, tamano: { cols: number; rows: number }): void {
+    if (o.terminales === undefined) return enviar({ tipo: 'terminal-fin', canal, motivo: 'no-encontrado' })
+    if (canales.has(canal) || canales.size >= MAXIMO_CANALES) return enviar({ tipo: 'terminal-fin', canal, motivo: 'demasiados' })
+    let enganche: Enganche
+    try {
+      enganche = o.terminales.adjuntar(
+        terminalId,
+        tamano,
+        (texto) => {
+          if (canales.get(canal) !== enganche) return
+          if ((socket?.bufferedAmount ?? 0) > MAXIMO_PENDIENTE_HUB) {
+            canales.delete(canal)
+            enganche.soltar()
+            enviar({ tipo: 'terminal-fin', canal, motivo: 'saturado' })
+            return
+          }
+          enviarSalida(canal, texto)
+        },
+        () => {
+          // Si el canal ya se soltó, el hub no espera nada más de él.
+          if (canales.get(canal) !== enganche) return
+          canales.delete(canal)
+          enviar({ tipo: 'terminal-fin', canal, motivo: 'terminada' })
+        },
+      )
+    } catch {
+      enviar({ tipo: 'terminal-fin', canal, motivo: 'no-encontrado' })
+      return
+    }
+    canales.set(canal, enganche)
+  }
+
+  function soltarCanales(): void {
+    const enganches = [...canales.values()]
+    canales.clear()
+    for (const enganche of enganches) enganche.soltar()
+  }
+
+  // Los mensajes de canal se atienden en el acto, en el orden en que llegan.
+  function atenderCanal(mensaje: Exclude<MensajeHub, { tipo: 'peticion' | 'adios' }>): void {
+    if (mensaje.tipo === 'terminal-adjuntar') return adjuntar(mensaje.canal, mensaje.terminalId, { cols: mensaje.cols, rows: mensaje.rows })
+    const enganche = canales.get(mensaje.canal)
+    if (enganche === undefined) return
+    if (mensaje.tipo === 'terminal-entrada') enganche.escribir(Buffer.from(mensaje.datos, 'base64').toString('utf8'))
+    else if (mensaje.tipo === 'terminal-tamano') enganche.redimensionar(mensaje.cols, mensaje.rows)
+    else {
+      canales.delete(mensaje.canal)
+      enganche.soltar()
+    }
+  }
+
   async function contestar(crudo: string): Promise<void> {
     let mensaje: MensajeHub
     try {
@@ -80,11 +159,28 @@ export function crearConexionHub(o: Opciones) {
     } catch {
       return
     }
-    if (mensaje.tipo !== 'peticion') return
+    if (mensaje.tipo === 'adios') return
+    if (mensaje.tipo !== 'peticion') return atenderCanal(mensaje)
     try {
-      const datos = mensaje.op === 'commits'
-        ? await o.obtenerCommits(mensaje.proyectoId).then((commits) => (commits === null ? null : { commits }))
-        : await o.obtenerLinea(mensaje.agenteId, mensaje.antes)
+      let datos: unknown
+      if (mensaje.op === 'commits') {
+        datos = await o.obtenerCommits(mensaje.proyectoId).then((commits) => (commits === null ? null : { commits }))
+      } else if (mensaje.op === 'linea') {
+        datos = await o.obtenerLinea(mensaje.agenteId, mensaje.antes)
+      } else if (o.terminales === undefined) {
+        enviar({ tipo: 'respuesta', id: mensaje.id, ok: false, error: 'Los terminales no están disponibles en esta máquina' })
+        return
+      } else if (mensaje.op === 'terminal-crear') {
+        datos = await o.terminales.crear(mensaje.accion === 'continuar'
+          ? { accion: 'continuar', agenteId: mensaje.agenteId }
+          : { accion: 'nueva', tipo: mensaje.tipo_agente, proyectoId: mensaje.proyectoId })
+      } else {
+        const cerrado = await o.terminales.cerrar(mensaje.terminalId).then(() => true, () => false)
+        enviar(cerrado
+          ? { tipo: 'respuesta', id: mensaje.id, ok: true, datos: { cerrado: true } }
+          : { tipo: 'respuesta', id: mensaje.id, ok: false, error: 'Terminal no encontrado' })
+        return
+      }
       enviar(datos === null
         ? { tipo: 'respuesta', id: mensaje.id, ok: false, error: 'No encontrado' }
         : { tipo: 'respuesta', id: mensaje.id, ok: true, datos })
@@ -104,8 +200,39 @@ export function crearConexionHub(o: Opciones) {
     if (parado) return
     const actual = o.crearSocket(o.url, o.token)
     socket = actual
+    let cerrado = false
+    // Cada socket termina una sola vez, venga de close, de error o de no abrirse.
+    // El WebSocket de Node, si la conexión ni llega a abrirse (hub caído), a veces
+    // solo avisa con error: sin esto no se reintentaba y el proceso salía con 0.
+    const alCerrar = (codigo: number): void => {
+      if (cerrado) return
+      cerrado = true
+      clearTimeout(apertura)
+      if (socket !== actual) return
+      socket = null
+      limpiar()
+      soltarCanales()
+      try {
+        actual.close()
+      } catch {
+        // Ya estaba cerrado.
+      }
+      if (codigo === 4401) {
+        log('Token revocado: vuelve a dar de alta esta máquina')
+        parado = true
+        return
+      }
+      if (codigo === 4409) {
+        log('Otra copia de este agente se ha conectado')
+        parado = true
+        return
+      }
+      programarReintento()
+    }
+    const apertura = setTimeout(() => alCerrar(1006), APERTURA_MAXIMA_MS)
     actual.onopen = () => {
       if (socket !== actual) return
+      clearTimeout(apertura)
       void (async () => {
         const instantanea = conIdDelHub(await o.obtenerInstantanea())
         enviar({ tipo: 'hola', maquina: instantanea.maquina, version: 1 })
@@ -115,23 +242,9 @@ export function crearConexionHub(o: Opciones) {
       estable = setTimeout(() => { intento = 0 }, ESTABLE_MS)
     }
     actual.onmessage = (evento) => { void contestar(String(evento.data)) }
-    actual.onerror = () => undefined
-    actual.onclose = (evento) => {
-      if (socket !== actual) return
-      socket = null
-      limpiar()
-      if (evento.code === 4401) {
-        log('Token revocado: vuelve a dar de alta esta máquina')
-        parado = true
-        return
-      }
-      if (evento.code === 4409) {
-        log('Otra copia de este agente se ha conectado')
-        parado = true
-        return
-      }
-      programarReintento()
-    }
+    // Si tras el error llega su close, manda el código del close (4401, 4409…).
+    actual.onerror = () => { setTimeout(() => alCerrar(1006), 0) }
+    actual.onclose = (evento) => alCerrar(evento.code)
   }
 
   function programarReintento(): void {
@@ -151,6 +264,7 @@ export function crearConexionHub(o: Opciones) {
       parado = true
       limpiar()
       if (reintento !== null) clearTimeout(reintento)
+      soltarCanales()
       socket?.close()
       socket = null
     },

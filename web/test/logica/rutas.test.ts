@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { leerRuta, maquinaDeRuta, rutaAgente, rutaProyecto } from '../../src/logica/rutas.js'
+import { leerRuta, maquinaDeRuta, rutaAgente, rutaProyecto, rutaTerminal } from '../../src/logica/rutas.js'
 
 const instantanea = (proyectos: string[], agentes: string[]) => ({
   version: 1 as const,
@@ -33,5 +33,11 @@ describe('rutas', () => {
     expect(maquinaDeRuta({ vista: 'agente', maquinaId: null, agenteId: 'codex:b' }, maquinas)?.nombre).toBe('Windows')
     expect(maquinaDeRuta({ vista: 'proyecto', maquinaId: null, proyectoId: 'p1' }, maquinas)?.nombre).toBe('MacBook')
     expect(maquinaDeRuta({ vista: 'proyecto', maquinaId: 'cccccccccccc', proyectoId: 'p1' }, maquinas)).toBeNull()
+  })
+
+  it('construye y lee la ruta de un terminal', () => {
+    expect(rutaTerminal('aaaaaaaaaaaa', '0123456789ab')).toBe('#/m/aaaaaaaaaaaa/terminal/0123456789ab')
+    expect(leerRuta('#/m/aaaaaaaaaaaa/terminal/0123456789ab')).toEqual({ vista: 'terminal', maquinaId: 'aaaaaaaaaaaa', terminalId: '0123456789ab' })
+    expect(leerRuta('#/m/aaaaaaaaaaaa/terminal/..%2Fx')).toEqual({ vista: 'general' })
   })
 })

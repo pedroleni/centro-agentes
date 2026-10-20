@@ -1,5 +1,8 @@
 import type { Commit, Instantanea } from '@centro/compartido'
+import { z } from 'zod'
 import type { ResultadoLinea } from '../linea.js'
+import type { PedidoTerminal, ResultadoTerminal } from '../terminales/servicio.js'
+import { mismaClave } from './clave.js'
 import {
   decodificarRuta,
   json,
@@ -13,6 +16,10 @@ export type Peticion = {
   metodo: string
   url: string
   host: string | undefined
+  origin?: string | undefined
+  // Cabecera X-Clave-Panel (ver clave.ts).
+  clave?: string | undefined
+  cuerpo?: string | null
 }
 
 export type { Respuesta } from './respuestas.js'
@@ -24,6 +31,54 @@ type DependenciasManejador = {
   obtenerLinea(agenteId: string, antes: number | null): Promise<ResultadoLinea | null>
   leerEstatico(ruta: string): Promise<Buffer | null>
   dirWeb: string
+  terminales?: {
+    crear(pedido: PedidoTerminal): Promise<ResultadoTerminal>
+    cerrar(terminalId: string): Promise<void>
+  }
+  // Clave de este arranque (ver clave.ts). Sin ella, nadie puede usar terminales.
+  clave?: string
+}
+
+const Pedido = z.union([
+  z.object({ accion: z.literal('continuar'), agenteId: z.string().min(1).max(200) }),
+  z.object({ accion: z.literal('nueva'), tipo: z.enum(['claude', 'codex']), proyectoId: z.string().min(1).max(64) }),
+])
+
+// Únicas escrituras del panel local: crear y cerrar terminales, siempre con un
+// Origin exacto de este mismo panel (ninguna otra web puede hacerlo) y con la
+// clave de este arranque (ningún otro proceso de la máquina puede hacerlo).
+async function manejarEscritura(dep: DependenciasManejador, peticion: Peticion): Promise<Respuesta> {
+  const origenes = new Set([`http://127.0.0.1:${dep.puerto}`, `http://localhost:${dep.puerto}`])
+  const ruta = decodificarRuta(peticion.url)
+  const crear = ruta === null ? null : /^\/api\/maquinas\/([^/]+)\/terminales$/.exec(ruta)
+  const cerrar = ruta === null ? null : /^\/api\/maquinas\/([^/]+)\/terminales\/([^/]+)$/.exec(ruta)
+  const valida = (peticion.metodo === 'POST' && crear !== null) || (peticion.metodo === 'DELETE' && cerrar !== null)
+  if (!valida) return respuesta(405, 'Metodo no permitido', { Allow: 'GET, HEAD' })
+  if (peticion.origin === undefined || !origenes.has(peticion.origin)) return json(403, { error: 'Origen no permitido' })
+  if (!mismaClave(peticion.clave, dep.clave)) {
+    return json(401, { error: 'Abre el panel con el enlace que muestra `npm run panel` al arrancar' })
+  }
+  if (dep.terminales === undefined) return json(404, { error: 'No encontrado' })
+  const instantanea = await dep.obtenerInstantanea().catch(() => null)
+  const maquinaId = (crear ?? cerrar)?.[1]
+  if (instantanea === null || maquinaId !== instantanea.maquina.id) return json(404, { error: 'Máquina no encontrada' })
+
+  if (cerrar !== null) {
+    const terminalId = cerrar[2] ?? ''
+    if (!/^[0-9a-f]{12}$/.test(terminalId)) return json(404, { error: 'Terminal no encontrado' })
+    await dep.terminales.cerrar(terminalId).catch(() => undefined)
+    return respuesta(204, '')
+  }
+
+  let pedido: PedidoTerminal
+  try {
+    const leido = Pedido.parse(JSON.parse(peticion.cuerpo ?? ''))
+    pedido = leido.accion === 'continuar' ? leido : { accion: 'nueva', tipo: leido.tipo, proyectoId: leido.proyectoId }
+  } catch {
+    return json(400, { error: 'Petición no válida' })
+  }
+  const resultado = await dep.terminales.crear(pedido)
+  return resultado.ok ? json(201, resultado.terminal) : json(resultado.estado, { error: resultado.error })
 }
 
 async function manejarApi(
@@ -118,6 +173,8 @@ export function crearManejador(
     let resultado: Respuesta
     if (peticion.host === undefined || !hostsPermitidos.has(peticion.host)) {
       resultado = respuesta(403, 'Host no permitido')
+    } else if (peticion.metodo === 'POST' || peticion.metodo === 'DELETE') {
+      resultado = await manejarEscritura(dep, peticion)
     } else if (peticion.metodo !== 'GET' && peticion.metodo !== 'HEAD') {
       resultado = respuesta(405, 'Metodo no permitido', { Allow: 'GET, HEAD' })
     } else {

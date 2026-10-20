@@ -2,6 +2,7 @@ import type { Agente } from '@centro/compartido'
 import { etiquetaEstado, nombreModelo } from '../logica/formato.js'
 import { Avatar } from './Avatar.js'
 import { rutaAgente } from '../logica/rutas.js'
+import { BotonTerminal } from './BotonTerminal.js'
 
 type PropiedadesSesiones = {
   agentes: Agente[]
@@ -38,11 +39,11 @@ export function Sesiones({ agentes, proyectoId, maquinaId = null }: PropiedadesS
                 .filter(Boolean)
                 .join(' · ')}
             </div>
-            {agente.puedeContinuar && (
+            {agente.puedeContinuar && maquinaId !== null && (
               <div className="cmd">
-                <button className="cd-btn pri" type="button" disabled title="Llega con el terminal">
-                  Continuar
-                </button>
+                <BotonTerminal maquinaId={maquinaId} pedido={{ accion: 'continuar', agenteId: agente.id }}>
+                  Continuar aquí
+                </BotonTerminal>
               </div>
             )}
           </article>

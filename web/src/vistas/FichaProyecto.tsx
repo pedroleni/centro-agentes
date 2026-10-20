@@ -2,6 +2,7 @@ import type { Agente, Commit, Proyecto } from '@centro/compartido'
 import { Historial } from './Historial.js'
 import { Sesiones } from './Sesiones.js'
 import { Tareas } from './Tareas.js'
+import { BotonTerminal } from './BotonTerminal.js'
 
 type PropiedadesFichaProyecto = {
   proyecto: Proyecto | null
@@ -38,6 +39,16 @@ export function FichaProyecto({
           {proyecto.git.rama !== null && <span className="ca-chip mono">⑂ {proyecto.git.rama}</span>}
           <span className="ca-chip">{proyecto.git.ramas.length} ramas</span>
           <span className="ca-chip">{proyecto.git.cambios} sin commit</span>
+          {maquinaId !== null && (
+            <span className="cd-acciones">
+              <BotonTerminal maquinaId={maquinaId} pedido={{ accion: 'nueva', tipo: 'claude', proyectoId: proyecto.id }}>
+                Nueva sesión de Claude
+              </BotonTerminal>
+              <BotonTerminal maquinaId={maquinaId} pedido={{ accion: 'nueva', tipo: 'codex', proyectoId: proyecto.id }} principal={false}>
+                Nueva sesión de Codex
+              </BotonTerminal>
+            </span>
+          )}
         </div>
       </header>
       {errorCommits && (
