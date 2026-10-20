@@ -410,14 +410,34 @@ el builder debe verificarlo allí antes de cerrar la fase de Windows.
 
 ## 9. Fases (sugeridas; el plan las detalla)
 
-1. **Base y lectores**: monorepo, esquemas compartidos, los lectores de §6.1
-   a §6.3 con fixtures sintéticos para macOS y Windows, y la lista
-   permitida y prohibida.
-2. **Hub y agente sin terminal**: conexión WSS, alta de máquinas, inicio de
-   sesión, instantáneas y **vista general por máquina** funcionando con el
-   MacBook. Se despliega en el Mac mini con `tailscale serve`.
-3. **Ficha de proyecto y detalle de agente**: historial, tareas y línea de
-   tiempo en vivo.
+**Cambio de orden del 2026-10-20 (Pedro):** al terminar la fase 1 sin nada
+visual, Pedro pidió ver el front cuanto antes. El panel web se adelanta a la
+fase 2 en **modo local** y el hub pasa a la fase 3.
+
+1. **Base y lectores** (hecha, PR #1): monorepo, esquemas compartidos,
+   lectores de §6.1 a §6.3 y §6.6, guardián y enmascarado.
+2. **Panel web en modo local**: el agente sirve el front y una API de solo
+   lectura en `http://127.0.0.1:4600` (`npm run panel`) para la máquina
+   donde corre. Incluye:
+   - la **vista general** de §2.1 con un solo bloque de máquina;
+   - la **ficha de proyecto** de §2.2: historial de commits y sesiones por
+     día, tareas con fecha y sesiones del proyecto. El botón "Continuar"
+     aparece desactivado con el texto "Llega con el terminal".
+
+   **Seguridad del modo local:**
+   - escucha solo en `127.0.0.1`;
+   - rechaza cualquier `Host` que no sea `127.0.0.1:<puerto>` o
+     `localhost:<puerto>`;
+   - solo admite `GET` y `HEAD`;
+   - no envía cabeceras CORS;
+   - manda una CSP `default-src 'self'`.
+
+   No hay contraseña porque no sale de la máquina. El mismo front lo
+   servirá el hub en la fase 3.
+3. **Hub y varias máquinas**: conexión WSS, alta de máquinas, inicio de
+   sesión, Tailscale (`tailscale serve` en el Mac mini) y bloques por
+   máquina en la vista general. También el detalle de agente con su línea
+   de tiempo en vivo.
 4. **Terminal en el navegador** en los Mac (tmux): continuar, nueva sesión,
    entrar y barra de teclas para el móvil.
 5. **Windows**: agente y terminal ConPTY, verificados por Pedro en su
