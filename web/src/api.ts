@@ -14,5 +14,10 @@ export async function obtenerInstantanea(): Promise<Instantanea> {
 
 export async function obtenerCommits(id: string): Promise<Commit[]> {
   const respuesta = await fetch(`/api/proyectos/${encodeURIComponent(id)}/commits`)
-  return Commit.array().parse(await obtenerJson(respuesta))
+  const cuerpo = await obtenerJson(respuesta)
+  return Commit.array().parse(
+    typeof cuerpo === 'object' && cuerpo !== null && 'commits' in cuerpo
+      ? cuerpo.commits
+      : cuerpo,
+  )
 }
