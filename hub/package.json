@@ -6,6 +6,7 @@
   "dependencies": {
     "@centro/agente": "*",
     "@centro/compartido": "*",
-    "ws": "^8.22.0"
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
   }
 }
