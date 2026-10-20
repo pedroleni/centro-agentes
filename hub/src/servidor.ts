@@ -96,7 +96,9 @@ export function arrancarHub(opciones: Opciones): Promise<Server> {
     const maquina = token === '' ? null : almacen.maquinaDeToken(token)
     if (maquina === null) {
       almacen.auditar('conexion-rechazada', { ip: ipDe(peticion) })
-      return rechazar('401 Unauthorized')
+      // Se completa el apretón de manos solo para cerrar con 4401: así el agente
+      // sabe que su token no vale (revocado) y deja de reintentar.
+      return wss.handleUpgrade(peticion, socket, cabeza, (ws) => ws.close(4401, 'Token no válido'))
     }
     wss.handleUpgrade(peticion, socket, cabeza, (ws) => {
       const conexion: ConexionAgente = {

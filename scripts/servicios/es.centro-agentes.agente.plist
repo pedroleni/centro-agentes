@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- LaunchAgent de usuario: arranca al iniciar sesión y se reinicia si se cae.
+     __REPO__ y __HOME__ se sustituyen al instalarlo (ver README). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>es.centro-agentes.agente</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd "__REPO__" &amp;&amp; exec npm run agente:conectar</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <!-- Solo se reinicia si se cae con error: con el token revocado el agente
+         termina con código 0 y no debe volver a arrancar. -->
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/centro-agentes-agente.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/centro-agentes-agente.log</string>
+</dict>
+</plist>
