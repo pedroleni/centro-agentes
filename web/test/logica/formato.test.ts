@@ -4,10 +4,12 @@ import {
   duracionCorta,
   etiquetaEstado,
   fechaRelativa,
+  nombreModelo,
   porcentajeContexto,
+  tiempoAgente,
 } from '../../src/logica/formato.js'
 
-function crearAgente(contexto: Agente['contexto']): Agente {
+function crearAgente(contexto: Agente['contexto'], cambios: Partial<Agente> = {}): Agente {
   return {
     id: 'claude:uno',
     tipo: 'claude',
@@ -30,6 +32,7 @@ function crearAgente(contexto: Agente['contexto']): Agente {
     puedeContinuar: false,
     tareas: [],
     commitsMs: [],
+    ...cambios,
   }
 }
 
@@ -65,6 +68,46 @@ describe('duracionCorta', () => {
     [3 * 24 * 60 * 60_000, '3 d'],
   ])('formatea %i ms como %s', (ms, esperada) => {
     expect(duracionCorta(ms)).toBe(esperada)
+  })
+})
+
+describe('nombreModelo', () => {
+  it.each([
+    ['claude-opus-5-5', 'Opus 5.5'],
+    ['claude-sonnet-4-6', 'Sonnet 4.6'],
+    ['claude-haiku-4-5-20251001', 'Haiku 4.5'],
+    ['claude-fable-5-1', 'Fable 5.1'],
+    ['claude-opus-5-5[1m]', 'Opus 5.5'],
+    ['gpt-5.6-sol', 'gpt-5.6-sol'],
+    [null, ''],
+  ])('convierte %s en %s', (modelo, esperado) => {
+    expect(nombreModelo(modelo)).toBe(esperado)
+  })
+})
+
+describe('tiempoAgente', () => {
+  const ahora = new Date(2026, 8, 12, 15, 30).getTime()
+
+  it('muestra la duración de un agente activo iniciado hace menos de 48 horas', () => {
+    const agente = crearAgente(null, { inicioMs: ahora - 3_600_000 })
+    expect(tiempoAgente(agente, ahora)).toBe('1 h')
+  })
+
+  it('muestra desde qué fecha está activo cuando no conoce el inicio', () => {
+    const agente = crearAgente(null, {
+      inicioMs: null,
+      ultimaActividadMs: new Date(2026, 7, 15, 10).getTime(),
+    })
+    expect(tiempoAgente(agente, ahora)).toBe('desde 15 ago')
+  })
+
+  it('muestra la última actividad relativa de un agente cerrado', () => {
+    const agente = crearAgente(null, {
+      estado: 'cerrada',
+      inicioMs: ahora - 3_600_000,
+      ultimaActividadMs: ahora - 12 * 60_000,
+    })
+    expect(tiempoAgente(agente, ahora)).toBe('hace 12 min')
   })
 })
 

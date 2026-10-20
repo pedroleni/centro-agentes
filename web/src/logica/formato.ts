@@ -24,6 +24,25 @@ export function porcentajeContexto(agente: Agente): number | null {
   return Math.round(100 * agente.contexto.usados / agente.contexto.ventana)
 }
 
+export function nombreModelo(modelo: string | null): string {
+  if (modelo === null) {
+    return ''
+  }
+
+  const coincidencia = /^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)(?:-\d{8})?(?:\[[^\]]+\])?$/.exec(modelo)
+  if (coincidencia === null) {
+    return modelo
+  }
+
+  const familia = coincidencia[1]
+  const mayor = coincidencia[2]
+  const menor = coincidencia[3]
+  if (familia === undefined || mayor === undefined || menor === undefined) {
+    return modelo
+  }
+  return `${familia[0]?.toUpperCase()}${familia.slice(1)} ${mayor}.${menor}`
+}
+
 export function duracionCorta(ms: number): string {
   const duracion = Math.max(0, ms)
   if (duracion < MINUTO_MS) {
@@ -77,4 +96,20 @@ export function fechaRelativa(ms: number, ahora: number): string {
   }
 
   return fechaCorta(ms)
+}
+
+export function tiempoAgente(agente: Agente, ahora: number): string {
+  const activo = agente.estado === 'trabajando'
+    || agente.estado === 'esperandote'
+    || agente.estado === 'en-curso'
+
+  if (!activo) {
+    return fechaRelativa(agente.ultimaActividadMs, ahora)
+  }
+
+  if (agente.inicioMs !== null && ahora - agente.inicioMs < 48 * HORA_MS) {
+    return duracionCorta(ahora - agente.inicioMs)
+  }
+
+  return `desde ${fechaCorta(agente.inicioMs ?? agente.ultimaActividadMs)}`
 }

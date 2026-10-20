@@ -1,9 +1,5 @@
 import type { Agente } from '@centro/compartido'
-import {
-  duracionCorta,
-  etiquetaEstado,
-  porcentajeContexto,
-} from '../logica/formato.js'
+import { etiquetaEstado, nombreModelo, porcentajeContexto, tiempoAgente } from '../logica/formato.js'
 
 type PropiedadesFilaAgente = {
   agente: Agente
@@ -24,7 +20,7 @@ export function FilaAgente({ agente, ahora }: PropiedadesFilaAgente) {
   const porcentaje = porcentajeContexto(agente)
   const icono = agente.tipo === 'claude' ? '✱' : '◎'
   const claseTipo = agente.tipo === 'claude' ? 'cl' : 'cx'
-  const detallesModelo = [agente.modelo, agente.esfuerzo].filter(Boolean).join(' · ')
+  const detallesModelo = [nombreModelo(agente.modelo), agente.esfuerzo].filter(Boolean).join(' · ')
 
   return (
     <div className="ca-agent-wrap">
@@ -46,9 +42,7 @@ export function FilaAgente({ agente, ahora }: PropiedadesFilaAgente) {
             </>
           )}
         </span>
-        {agente.inicioMs !== null && (
-          <span className="ca-ctx">⏱ {duracionCorta(ahora - agente.inicioMs)}</span>
-        )}
+        <span className="ca-ctx">⏱ {tiempoAgente(agente, ahora)}</span>
       </div>
     </div>
   )

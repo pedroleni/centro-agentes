@@ -1,5 +1,5 @@
 import type { Agente } from '@centro/compartido'
-import { etiquetaEstado } from '../logica/formato.js'
+import { etiquetaEstado, nombreModelo } from '../logica/formato.js'
 
 type PropiedadesSesiones = {
   agentes: Agente[]
@@ -30,7 +30,7 @@ export function Sesiones({ agentes, proyectoId }: PropiedadesSesiones) {
               <span className={`ca-st ${claseEstado(agente)}`}><i />{etiquetaEstado(agente.estado)}</span>
             </div>
             <div className="m">
-              {[esClaude ? 'Claude' : 'Codex', agente.modelo, agente.esfuerzo]
+              {[esClaude ? 'Claude' : 'Codex', nombreModelo(agente.modelo), agente.esfuerzo]
                 .filter(Boolean)
                 .join(' · ')}
             </div>

@@ -53,16 +53,36 @@ export function historialPorDia(
   const commitsEnlazados = new Set(
     [...enlaces.values()].flat().map((commit) => commit.hash),
   )
+  const eventosSesiones = agentesDelProyecto.flatMap((agente): Evento[] => {
+    const commitsPorDia = new Map<string, Commit[]>()
+    for (const commit of enlaces.get(agente.id) ?? []) {
+      const clave = claveDia(commit.fechaMs)
+      const commitsDelDia = commitsPorDia.get(clave) ?? []
+      commitsDelDia.push(commit)
+      commitsPorDia.set(clave, commitsDelDia)
+    }
+
+    const eventos: Evento[] = [...commitsPorDia.values()].map((commitsDelDia) => ({
+      tipo: 'sesion',
+      fechaMs: Math.max(...commitsDelDia.map((commit) => commit.fechaMs)),
+      agente,
+      commits: commitsDelDia,
+    }))
+    if (!commitsPorDia.has(claveDia(agente.ultimaActividadMs))) {
+      eventos.push({
+        tipo: 'sesion',
+        fechaMs: agente.ultimaActividadMs,
+        agente,
+        commits: [],
+      })
+    }
+    return eventos
+  })
   const eventos: Evento[] = [
     ...commits
       .filter((commit) => !commitsEnlazados.has(commit.hash))
       .map((commit): Evento => ({ tipo: 'commit', fechaMs: commit.fechaMs, commit })),
-    ...agentesDelProyecto.map((agente): Evento => ({
-      tipo: 'sesion',
-      fechaMs: agente.ultimaActividadMs,
-      agente,
-      commits: enlaces.get(agente.id) ?? [],
-    })),
+    ...eventosSesiones,
   ].sort((a, b) => b.fechaMs - a.fechaMs)
 
   const dias = new Map<string, Dia>()

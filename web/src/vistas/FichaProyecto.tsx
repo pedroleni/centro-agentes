@@ -30,9 +30,6 @@ export function FichaProyecto({ proyecto, agentes, commits, ahora }: Propiedades
           <span className="ca-chip">{proyecto.git.ramas.length} ramas</span>
           <span className="ca-chip">{proyecto.git.cambios} sin commit</span>
         </div>
-        <nav className="cd-tabs" aria-label="Secciones del proyecto">
-          <span className="on">Resumen</span><span>Historial</span><span>Tareas</span><span>Sesiones</span><span>Ramas</span>
-        </nav>
       </header>
       <div className="cd-main">
         <Historial commits={commits} agentes={agentes} proyectoId={proyecto.id} ahora={ahora} />

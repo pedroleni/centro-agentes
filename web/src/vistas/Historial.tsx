@@ -1,6 +1,7 @@
 import type { Agente, Commit } from '@centro/compartido'
+import { useEffect, useState } from 'react'
 import { historialPorDia } from '../logica/historial.js'
-import { etiquetaEstado } from '../logica/formato.js'
+import { etiquetaEstado, nombreModelo } from '../logica/formato.js'
 
 type PropiedadesHistorial = {
   commits: Commit[]
@@ -23,12 +24,25 @@ function CommitEnHistorial({ commit }: { commit: Commit }) {
 }
 
 export function Historial({ commits, agentes, proyectoId, ahora }: PropiedadesHistorial) {
+  const [limite, establecerLimite] = useState(40)
   const dias = historialPorDia(commits, agentes, proyectoId, ahora)
+  const totalEventos = dias.reduce((total, dia) => total + dia.eventos.length, 0)
+  let restantes = limite
+  const diasVisibles = dias.flatMap((dia) => {
+    if (restantes <= 0) return []
+    const eventos = dia.eventos.slice(0, restantes)
+    restantes -= eventos.length
+    return [{ ...dia, eventos }]
+  })
+
+  useEffect(() => {
+    establecerLimite(40)
+  }, [proyectoId])
 
   return (
     <section className="cd-panel">
       <h2>Historial de desarrollo <span>commits + agentes, en orden</span></h2>
-      {dias.map((dia) => (
+      {diasVisibles.map((dia) => (
         <div key={dia.clave}>
           <div className="cd-day">{dia.etiqueta}</div>
           <div className="cd-tl">
@@ -47,13 +61,13 @@ export function Historial({ commits, agentes, proyectoId, ahora }: PropiedadesHi
 
               const { agente } = evento
               const tipo = agente.tipo === 'claude' ? 'Claude' : 'Codex'
-              const detalles = [agente.modelo, agente.esfuerzo, etiquetaEstado(agente.estado)]
+              const detalles = [nombreModelo(agente.modelo), agente.esfuerzo, etiquetaEstado(agente.estado)]
                 .filter(Boolean)
                 .join(' · ')
               return (
                 <div
                   className={`cd-ev ${agente.tipo === 'claude' ? 'cl' : 'cx'}`}
-                  key={`sesion:${agente.id}`}
+                  key={`sesion:${agente.id}:${evento.fechaMs}`}
                 >
                   <div className="row">
                     <span className="t">{hora(evento.fechaMs)}</span>
@@ -69,6 +83,15 @@ export function Historial({ commits, agentes, proyectoId, ahora }: PropiedadesHi
           </div>
         </div>
       ))}
+      {limite < totalEventos && (
+        <button
+          className="cd-btn cd-more-history"
+          type="button"
+          onClick={() => establecerLimite((actual) => actual + 40)}
+        >
+          Mostrar más
+        </button>
+      )}
     </section>
   )
 }

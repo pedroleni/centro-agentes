@@ -123,4 +123,24 @@ describe('VistaGeneral', () => {
     expect(screen.getByRole('link', { name: 'centro-agentes' }).getAttribute('href'))
       .toBe('#/proyecto/centro-agentes')
   })
+
+  it('no muestra acciones de editor ni terminal todavía no disponibles', () => {
+    pintar()
+    expect(screen.queryByText('⌘')).toBeNull()
+    expect(screen.queryByText('>_')).toBeNull()
+  })
+
+  it('usa singular y plural al contar los proyectos de un grupo', () => {
+    const { rerender } = pintar()
+    expect(screen.getByText('· 1 proyecto')).toBeTruthy()
+
+    const datos = crearInstantanea([
+      crearProyecto(),
+      crearProyecto({ id: 'otro', nombre: 'otro-proyecto' }),
+    ])
+    rerender(
+      <VistaGeneral datos={datos} error={false} actualizadaMs={datos.generadaMs} ahora={AHORA} />,
+    )
+    expect(screen.getByText('· 2 proyectos')).toBeTruthy()
+  })
 })

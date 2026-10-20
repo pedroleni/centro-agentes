@@ -27,8 +27,6 @@ export function TarjetaProyecto({ tarjeta, ahora }: PropiedadesTarjetaProyecto) 
         <a className="name mono" href={`#/proyecto/${proyecto.id}`} title={proyecto.nombre}>
           {proyecto.nombre}
         </a>
-        <span className="ca-ico" title="Abrir en editor">⌘</span>
-        <span className="ca-ico" title="Abrir terminal">&gt;_</span>
       </div>
       {tarjeta.ultimoPrompt !== null && (
         <div className="ca-prompt" title={tarjeta.ultimoPrompt}>{tarjeta.ultimoPrompt}</div>

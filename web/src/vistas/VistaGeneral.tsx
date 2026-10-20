@@ -79,12 +79,14 @@ export function VistaGeneral({ datos, error, actualizadaMs, ahora }: Propiedades
             {datos.proyectos.length === 0 && datos.agentes.length === 0 && (
               <p className="ca-empty">No hay proyectos en las carpetas escaneadas</p>
             )}
-            {grupos.map((grupo) => (
-              <section key={grupo.nombre}>
-                <h2 className="ca-group">
-                  📁 {grupo.nombre}
-                  <small>· {grupo.tarjetas.length + grupo.inactivas.length} proyectos</small>
-                </h2>
+            {grupos.map((grupo) => {
+              const numeroProyectos = grupo.tarjetas.length + grupo.inactivas.length
+              return (
+                <section key={grupo.nombre}>
+                  <h2 className="ca-group">
+                    📁 {grupo.nombre}
+                    <small>· {numeroProyectos} {numeroProyectos === 1 ? 'proyecto' : 'proyectos'}</small>
+                  </h2>
                 {grupo.tarjetas.length > 0 && (
                   <div className="ca-grid">
                     {grupo.tarjetas.map((tarjeta) => (
@@ -99,8 +101,9 @@ export function VistaGeneral({ datos, error, actualizadaMs, ahora }: Propiedades
                     ))}
                   </div>
                 )}
-              </section>
-            ))}
+                </section>
+              )
+            })}
             {agrupacion.sinProyecto.length > 0 && (
               <section>
                 <h2 className="ca-group">Sin proyecto</h2>

@@ -53,4 +53,46 @@ describe('historialPorDia', () => {
 
     expect(historialPorDia([jueves], [], 'proyecto-1', ahora)[0]?.etiqueta).toBe('jueves 10 sep')
   })
+
+  it('repite una sesión en cada día de sus commits y también en el día de su última actividad', () => {
+    const ahora = new Date(2026, 8, 12, 15).getTime()
+    const commitDiaDTemprano = crearCommit('d-temprano', new Date(2026, 8, 10, 9).getTime())
+    const commitDiaDUltimo = crearCommit('d-ultimo', new Date(2026, 8, 10, 18).getTime())
+    const commitDiaDMenos3 = crearCommit('d-menos-3', new Date(2026, 8, 7, 11).getTime())
+    const agente = crearAgente({
+      ultimaActividadMs: ahora - 30_000,
+      commitsMs: [
+        commitDiaDTemprano.fechaMs,
+        commitDiaDUltimo.fechaMs,
+        commitDiaDMenos3.fechaMs,
+      ],
+    })
+
+    const dias = historialPorDia(
+      [commitDiaDTemprano, commitDiaDUltimo, commitDiaDMenos3],
+      [agente],
+      'proyecto-1',
+      ahora,
+    )
+    const sesiones = dias.flatMap((dia) => dia.eventos)
+      .filter((evento) => evento.tipo === 'sesion')
+
+    expect(dias.map((dia) => dia.clave)).toEqual(['2026-09-12', '2026-09-10', '2026-09-07'])
+    expect(sesiones).toHaveLength(3)
+    expect(sesiones).toEqual([
+      { tipo: 'sesion', fechaMs: agente.ultimaActividadMs, agente, commits: [] },
+      {
+        tipo: 'sesion',
+        fechaMs: commitDiaDUltimo.fechaMs,
+        agente,
+        commits: [commitDiaDTemprano, commitDiaDUltimo],
+      },
+      {
+        tipo: 'sesion',
+        fechaMs: commitDiaDMenos3.fechaMs,
+        agente,
+        commits: [commitDiaDMenos3],
+      },
+    ])
+  })
 })

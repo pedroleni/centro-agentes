@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { Agente, Commit, Proyecto } from '@centro/compartido'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FichaProyecto } from '../../src/vistas/FichaProyecto.js'
 
@@ -116,6 +116,23 @@ describe('FichaProyecto', () => {
   it('ofrece Continuar desactivado cuando la sesión puede retomarse', () => {
     pintar()
     expect((screen.getByRole('button', { name: 'Continuar' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('muestra el historial en tandas de cuarenta eventos', () => {
+    const muchosCommits = Array.from({ length: 50 }, (_, indice): Commit => ({
+      hash: `commit-${indice}`,
+      mensaje: `Commit ${indice}`,
+      fechaMs: AHORA - indice * 60_000,
+      autor: 'Pruebas Centro',
+    }))
+    const { container } = render(
+      <FichaProyecto proyecto={proyecto} agentes={[]} commits={muchosCommits} ahora={AHORA} />,
+    )
+
+    expect(container.querySelectorAll('.cd-ev')).toHaveLength(40)
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar más' }))
+    expect(container.querySelectorAll('.cd-ev')).toHaveLength(50)
+    expect(screen.queryByRole('button', { name: 'Mostrar más' })).toBeNull()
   })
 
   it('muestra un estado de no encontrado con enlace de vuelta', () => {
