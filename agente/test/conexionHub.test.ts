@@ -18,6 +18,7 @@ class SocketFalso {
   abrir() { this.onopen?.() }
   llega(m: unknown) { this.onmessage?.({ data: JSON.stringify(m) }) }
   cae(code = 1006) { this.onclose?.({ code }) }
+  falla() { this.onerror?.() }
 }
 
 const maquina = { id: 'local', nombre: 'MacBook', so: 'macos' as const, avisos: [] as never[] }
@@ -294,6 +295,50 @@ describe('conexión con el hub', () => {
     expect(s.enviados.slice(antes)).toEqual([{ tipo: 'terminal-fin', canal: 'c1', motivo: 'saturado' }])
     alDatos('más')
     expect(s.enviados.length).toBe(antes + 1)
+    conexion.parar()
+  })
+
+  it('si la conexión falla solo con error (sin close), sigue reintentando', async () => {
+    vi.useFakeTimers()
+    const { conexion, sockets } = preparar()
+    conexion.arrancar()
+    sockets[0]!.abrir()
+    sockets[0]!.cae()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(sockets).toHaveLength(2)
+    // El hub sigue caído: Node solo avisa con error, nunca con close.
+    sockets[1]!.falla()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(sockets).toHaveLength(3)
+    expect(sockets[1]!.cerrado).toBe(true)
+    // Un close que llega después del error no programa un segundo reintento.
+    sockets[1]!.cae()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(sockets).toHaveLength(3)
+    conexion.parar()
+  })
+
+  it('un error seguido de su close respeta el código del close (4401 para)', async () => {
+    vi.useFakeTimers()
+    const { conexion, sockets, log } = preparar()
+    conexion.arrancar()
+    sockets[0]!.abrir()
+    sockets[0]!.falla()
+    sockets[0]!.cae(4401)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(sockets).toHaveLength(1)
+    expect(log).toHaveBeenCalledWith('Token revocado: vuelve a dar de alta esta máquina')
+    conexion.parar()
+  })
+
+  it('si en 15 s no llega a abrirse, lo cierra y vuelve a intentarlo', async () => {
+    vi.useFakeTimers()
+    const { conexion, sockets } = preparar()
+    conexion.arrancar()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(sockets[0]!.cerrado).toBe(true)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(sockets).toHaveLength(2)
     conexion.parar()
   })
 })

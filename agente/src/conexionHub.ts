@@ -35,6 +35,7 @@ const MAXIMO_PENDIENTE_HUB = 8 * 1024 * 1024
 // 48 KiB por mensaje: en base64 son 64 K caracteres, bajo el límite del protocolo.
 const TROZO_SALIDA = 48 * 1024
 const ESTABLE_MS = 60_000
+const APERTURA_MAXIMA_MS = 15_000
 const INTERVALO_INSTANTANEA_MS = 5_000
 
 export function urlWebSocket(hub: string): string {
@@ -199,8 +200,39 @@ export function crearConexionHub(o: Opciones) {
     if (parado) return
     const actual = o.crearSocket(o.url, o.token)
     socket = actual
+    let cerrado = false
+    // Cada socket termina una sola vez, venga de close, de error o de no abrirse.
+    // El WebSocket de Node, si la conexión ni llega a abrirse (hub caído), a veces
+    // solo avisa con error: sin esto no se reintentaba y el proceso salía con 0.
+    const alCerrar = (codigo: number): void => {
+      if (cerrado) return
+      cerrado = true
+      clearTimeout(apertura)
+      if (socket !== actual) return
+      socket = null
+      limpiar()
+      soltarCanales()
+      try {
+        actual.close()
+      } catch {
+        // Ya estaba cerrado.
+      }
+      if (codigo === 4401) {
+        log('Token revocado: vuelve a dar de alta esta máquina')
+        parado = true
+        return
+      }
+      if (codigo === 4409) {
+        log('Otra copia de este agente se ha conectado')
+        parado = true
+        return
+      }
+      programarReintento()
+    }
+    const apertura = setTimeout(() => alCerrar(1006), APERTURA_MAXIMA_MS)
     actual.onopen = () => {
       if (socket !== actual) return
+      clearTimeout(apertura)
       void (async () => {
         const instantanea = conIdDelHub(await o.obtenerInstantanea())
         enviar({ tipo: 'hola', maquina: instantanea.maquina, version: 1 })
@@ -210,24 +242,9 @@ export function crearConexionHub(o: Opciones) {
       estable = setTimeout(() => { intento = 0 }, ESTABLE_MS)
     }
     actual.onmessage = (evento) => { void contestar(String(evento.data)) }
-    actual.onerror = () => undefined
-    actual.onclose = (evento) => {
-      if (socket !== actual) return
-      socket = null
-      limpiar()
-      soltarCanales()
-      if (evento.code === 4401) {
-        log('Token revocado: vuelve a dar de alta esta máquina')
-        parado = true
-        return
-      }
-      if (evento.code === 4409) {
-        log('Otra copia de este agente se ha conectado')
-        parado = true
-        return
-      }
-      programarReintento()
-    }
+    // Si tras el error llega su close, manda el código del close (4401, 4409…).
+    actual.onerror = () => { setTimeout(() => alCerrar(1006), 0) }
+    actual.onclose = (evento) => alCerrar(evento.code)
   }
 
   function programarReintento(): void {
