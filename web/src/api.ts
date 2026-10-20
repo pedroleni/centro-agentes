@@ -1,4 +1,4 @@
-import { Commit, Instantanea } from '@centro/compartido'
+import { Commit, RespuestaMaquinas } from '@centro/compartido'
 import { z } from 'zod'
 
 const TIEMPO_LIMITE_MS = 8_000
@@ -21,24 +21,6 @@ async function obtenerJson(respuesta: Response): Promise<unknown> {
     throw new ErrorApi(respuesta.status)
   }
   return respuesta.json()
-}
-
-export async function obtenerInstantanea(): Promise<Instantanea> {
-  const respuesta = await fetch('/api/instantanea', opcionesPeticion(TIEMPO_LIMITE_INSTANTANEA_MS))
-  return Instantanea.parse(await obtenerJson(respuesta))
-}
-
-export async function obtenerCommits(id: string): Promise<Commit[]> {
-  const respuesta = await fetch(
-    `/api/proyectos/${encodeURIComponent(id)}/commits`,
-    opcionesPeticion(),
-  )
-  const cuerpo = await obtenerJson(respuesta)
-  return Commit.array().parse(
-    typeof cuerpo === 'object' && cuerpo !== null && 'commits' in cuerpo
-      ? cuerpo.commits
-      : cuerpo,
-  )
 }
 
 const EventoLinea = z.object({
@@ -66,11 +48,46 @@ const ResultadoLinea = z.object({
 export type EventoLinea = z.infer<typeof EventoLinea>
 export type ResultadoLinea = z.infer<typeof ResultadoLinea>
 
-export async function obtenerLinea(id: string, antes: number | null): Promise<ResultadoLinea> {
+// --- API común al panel local y al hub (/api/maquinas…) ---
+
+export async function obtenerMaquinas(): Promise<RespuestaMaquinas> {
+  const respuesta = await fetch('/api/maquinas', opcionesPeticion(TIEMPO_LIMITE_INSTANTANEA_MS))
+  return RespuestaMaquinas.parse(await obtenerJson(respuesta))
+}
+
+export async function obtenerCommitsDe(maquinaId: string, proyectoId: string): Promise<Commit[]> {
+  const respuesta = await fetch(
+    `/api/maquinas/${encodeURIComponent(maquinaId)}/proyectos/${encodeURIComponent(proyectoId)}/commits`,
+    opcionesPeticion(),
+  )
+  return z.object({ commits: z.array(Commit) }).parse(await obtenerJson(respuesta)).commits
+}
+
+export async function obtenerLineaDe(maquinaId: string, agenteId: string, antes: number | null): Promise<ResultadoLinea> {
   const parametros = antes === null ? '' : `?antes=${antes}`
   const respuesta = await fetch(
-    `/api/agentes/${encodeURIComponent(id)}/linea${parametros}`,
+    `/api/maquinas/${encodeURIComponent(maquinaId)}/agentes/${encodeURIComponent(agenteId)}/linea${parametros}`,
     opcionesPeticion(),
   )
   return ResultadoLinea.parse(await obtenerJson(respuesta))
+}
+
+export async function entrar(contrasena: string): Promise<void> {
+  const respuesta = await fetch('/api/sesion', {
+    ...opcionesPeticion(),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contrasena }),
+  })
+  if (!respuesta.ok) throw new ErrorApi(respuesta.status)
+}
+
+export async function crearCodigoAlta(): Promise<{ codigo: string; caducaMs: number }> {
+  const respuesta = await fetch('/api/maquinas/codigos', { ...opcionesPeticion(), method: 'POST' })
+  return z.object({ codigo: z.string(), caducaMs: z.number() }).parse(await obtenerJson(respuesta))
+}
+
+export async function revocarMaquina(maquinaId: string): Promise<void> {
+  const respuesta = await fetch(`/api/maquinas/${encodeURIComponent(maquinaId)}`, { ...opcionesPeticion(), method: 'DELETE' })
+  if (!respuesta.ok) throw new ErrorApi(respuesta.status)
 }

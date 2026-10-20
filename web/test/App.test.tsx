@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import type { Agente, Instantanea } from '@centro/compartido'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import type { Agente, Instantanea, RespuestaMaquinas } from '@centro/compartido'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from '../src/App.js'
 
@@ -40,6 +40,14 @@ function instantanea(hash: string, generadaMs: number, agentes: Agente[] = []): 
       ultimaActividadMs: generadaMs,
     }],
     agentes,
+  }
+}
+
+function maquinas(hash: string, generadaMs: number, agentes: Agente[] = []): RespuestaMaquinas {
+  const datos = instantanea(hash, generadaMs, agentes)
+  return {
+    modo: 'local',
+    maquinas: [{ id: 'mac', nombre: datos.maquina.nombre, so: 'macos', conectada: true, ultimoLatidoMs: generadaMs, instantanea: datos }],
   }
 }
 
@@ -100,8 +108,8 @@ describe('App', () => {
     let peticionesLinea = 0
     vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
       const url = String(entrada)
-      if (url === '/api/instantanea') return respuesta(instantanea('hash-1', 2, [agente]))
-      if (url === '/api/agentes/codex%3Asesion-1/linea') {
+      if (url === '/api/maquinas') return respuesta(maquinas('hash-1', 2, [agente]))
+      if (url === '/api/maquinas/mac/agentes/codex%3Asesion-1/linea') {
         peticionesLinea += 1
         return respuesta({
           antes: null,
@@ -146,9 +154,9 @@ describe('App', () => {
     let peticionesCommits = 0
     vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
       const url = String(entrada)
-      if (url === '/api/instantanea') {
+      if (url === '/api/maquinas') {
         peticionesInstantanea += 1
-        return respuesta(instantanea('hash-1', peticionesInstantanea))
+        return respuesta(maquinas('hash-1', peticionesInstantanea))
       }
       peticionesCommits += 1
       if (peticionesCommits === 1) return respuesta({}, 500)
@@ -176,10 +184,10 @@ describe('App', () => {
     let peticionesCommits = 0
     vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
       const url = String(entrada)
-      if (url === '/api/instantanea') {
+      if (url === '/api/maquinas') {
         peticionesInstantanea += 1
         const hash = peticionesInstantanea === 1 ? 'hash-1' : 'hash-2'
-        return respuesta(instantanea(hash, peticionesInstantanea))
+        return respuesta(maquinas(hash, peticionesInstantanea))
       }
       peticionesCommits += 1
       return respuesta({ commits: [] })
@@ -213,8 +221,8 @@ describe('App', () => {
     let peticiones = 0
     vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
       const url = String(entrada)
-      if (url === '/api/instantanea') return respuesta(instantanea('h', 2, [agente]))
-      if (url.startsWith('/api/agentes/codex%3Aa/linea')) {
+      if (url === '/api/maquinas') return respuesta(maquinas('h', 2, [agente]))
+      if (url.startsWith('/api/maquinas/mac/agentes/codex%3Aa/linea')) {
         peticiones += 1
         return peticiones === 1 ? respuesta({ error: 'x' }, 500) : respuesta(lineaCon('Ya responde'))
       }
@@ -233,7 +241,7 @@ describe('App', () => {
     window.location.hash = '#/agente/codex%3Aa'
     vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
       const url = String(entrada)
-      if (url === '/api/instantanea') return respuesta(instantanea('h', 2, [agente]))
+      if (url === '/api/maquinas') return respuesta(maquinas('h', 2, [agente]))
       return respuesta({ error: 'No encontrado' }, 404)
     }))
     render(<App />)
@@ -250,13 +258,13 @@ describe('App', () => {
     let peticionesA = 0
     vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
       const url = String(entrada)
-      if (url === '/api/instantanea') return respuesta(instantanea('h', 2, [a, b]))
-      if (url.startsWith('/api/agentes/codex%3Aa/linea')) {
+      if (url === '/api/maquinas') return respuesta(maquinas('h', 2, [a, b]))
+      if (url.startsWith('/api/maquinas/mac/agentes/codex%3Aa/linea')) {
         peticionesA += 1
         if (peticionesA === 1) return respuesta(lineaCon('Inicial de A'))
         return new Promise<Response>((resolver) => { soltarA = resolver })
       }
-      if (url.startsWith('/api/agentes/codex%3Ab/linea')) return respuesta(lineaCon('Inicial de B', 30))
+      if (url.startsWith('/api/maquinas/mac/agentes/codex%3Ab/linea')) return respuesta(lineaCon('Inicial de B', 30))
       return respuesta({}, 404)
     }))
     render(<App />)
@@ -271,5 +279,46 @@ describe('App', () => {
     await act(async () => { soltarA(respuesta(lineaCon('Tardía de A', 40))); await Promise.resolve(); await Promise.resolve() })
     expect(screen.getByText('Inicial de B')).toBeTruthy()
     expect(screen.queryByText('Tardía de A')).toBeNull()
+  })
+  it('con un 401 muestra la pantalla de entrada y, al entrar, carga las máquinas', async () => {
+    let conSesion = false
+    vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request, init?: RequestInit) => {
+      const url = String(entrada)
+      if (url === '/api/sesion' && init?.method === 'POST') {
+        const { contrasena } = JSON.parse(String(init.body)) as { contrasena: string }
+        if (contrasena !== 'secreta') return respuesta({ error: 'Contraseña incorrecta' }, 401)
+        conSesion = true
+        return respuesta({}, 204)
+      }
+      if (url === '/api/maquinas') return conSesion ? respuesta(maquinas('h', 2)) : respuesta({ error: 'Inicia sesión' }, 401)
+      return respuesta({}, 404)
+    }))
+    render(<App />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    const campo = screen.getByLabelText('Contraseña')
+    fireEvent.change(campo, { target: { value: 'mala' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })); await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByText('Contraseña incorrecta')).toBeTruthy()
+    fireEvent.change(campo, { target: { value: 'secreta' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })); for (let i = 0; i < 6; i += 1) await Promise.resolve() })
+    expect(screen.queryByLabelText('Contraseña')).toBeNull()
+    expect(screen.getByText('Centro de agentes')).toBeTruthy()
+  })
+
+  it('las rutas nuevas con máquina piden la línea a /api/maquinas/<mid>/agentes/<aid>/linea', async () => {
+    const agente = crearAgente('codex:a', 'Agente A')
+    window.location.hash = '#/m/mac/agente/codex%3Aa'
+    const urls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (entrada: string | URL | Request) => {
+      const url = String(entrada)
+      urls.push(url)
+      if (url === '/api/maquinas') return respuesta(maquinas('h', 2, [agente]))
+      if (url.startsWith('/api/maquinas/mac/agentes/codex%3Aa/linea')) return respuesta(lineaCon('Hola desde la ruta nueva'))
+      return respuesta({}, 404)
+    }))
+    render(<App />)
+    await act(async () => { for (let i = 0; i < 6; i += 1) await Promise.resolve() })
+    expect(urls).toContain('/api/maquinas/mac/agentes/codex%3Aa/linea')
+    expect(screen.getByText('Hola desde la ruta nueva')).toBeTruthy()
   })
 })

@@ -9,6 +9,7 @@ type PropiedadesFichaProyecto = {
   commits: Commit[]
   errorCommits?: boolean
   ahora: number
+  maquinaId?: string | null
 }
 
 export function FichaProyecto({
@@ -17,6 +18,7 @@ export function FichaProyecto({
   commits,
   errorCommits = false,
   ahora,
+  maquinaId = null,
 }: PropiedadesFichaProyecto) {
   if (proyecto === null) {
     return (
@@ -44,10 +46,10 @@ export function FichaProyecto({
         </div>
       )}
       <div className="cd-main">
-        <Historial commits={commits} agentes={agentes} proyectoId={proyecto.id} ahora={ahora} />
+        <Historial commits={commits} agentes={agentes} proyectoId={proyecto.id} ahora={ahora} maquinaId={maquinaId} />
         <div className="cd-side">
           <Tareas proyecto={proyecto} agentes={agentes} />
-          <Sesiones agentes={agentes} proyectoId={proyecto.id} />
+          <Sesiones agentes={agentes} proyectoId={proyecto.id} maquinaId={maquinaId} />
         </div>
       </div>
     </main>

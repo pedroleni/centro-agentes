@@ -1,8 +1,10 @@
 import type { Commit } from '@centro/compartido'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ErrorApi, obtenerCommits, obtenerLinea, type ResultadoLinea } from './api.js'
+import { ErrorApi, obtenerCommitsDe, obtenerLineaDe, type ResultadoLinea } from './api.js'
 import { fusionarLinea } from './logica/linea.js'
-import { usarInstantanea } from './usarInstantanea.js'
+import { leerRuta, maquinaDeRuta } from './logica/rutas.js'
+import { usarMaquinas } from './usarMaquinas.js'
+import { Entrar } from './vistas/Entrar.js'
 import { DetalleAgente } from './vistas/DetalleAgente.js'
 import { FichaProyecto } from './vistas/FichaProyecto.js'
 import { VistaGeneral } from './vistas/VistaGeneral.js'
@@ -19,25 +21,22 @@ export function App() {
     actualizadaMs: number | null
     fallo: boolean
   } | null>(null)
-  const instantanea = usarInstantanea()
-  const coincidenciaProyecto = /^#\/proyecto\/([^/]+)$/.exec(ruta)
-  const proyectoId = coincidenciaProyecto?.[1] ?? null
-  const coincidenciaAgente = /^#\/agente\/([^/]+)$/.exec(ruta)
-  let agenteId: string | null = null
-  try {
-    agenteId = coincidenciaAgente?.[1] === undefined
-      ? null
-      : decodeURIComponent(coincidenciaAgente[1])
-  } catch {
-    agenteId = null
-  }
+  const estado = usarMaquinas()
+  const rutaLeida = leerRuta(ruta)
+  const proyectoId = rutaLeida.vista === 'proyecto' ? rutaLeida.proyectoId : null
+  const agenteId = rutaLeida.vista === 'agente' ? rutaLeida.agenteId : null
+  const maquina = estado.datos === null ? null : maquinaDeRuta(rutaLeida, estado.datos.maquinas)
+  const maquinaId = maquina?.id ?? null
+  const datosMaquina = maquina?.instantanea ?? null
+  // Compatibilidad con el resto de la vista: misma forma que antes, pero de la máquina de la ruta.
+  const instantanea = { datos: datosMaquina, error: estado.error, actualizadaMs: estado.actualizadaMs }
   const proyectoAbierto = proyectoId === null
     ? null
-    : instantanea.datos?.proyectos.find((proyecto) => proyecto.id === proyectoId) ?? null
+    : datosMaquina?.proyectos.find((proyecto) => proyecto.id === proyectoId) ?? null
   const hashProyecto = proyectoAbierto?.git.ultimoCommit?.hash ?? null
   const agenteAbierto = agenteId === null
     ? null
-    : instantanea.datos?.agentes.find((agente) => agente.id === agenteId) ?? null
+    : datosMaquina?.agentes.find((agente) => agente.id === agenteId) ?? null
   const agenteActivo = agenteAbierto !== null && (
     agenteAbierto.estado === 'trabajando'
     || agenteAbierto.estado === 'esperandote'
@@ -77,7 +76,8 @@ export function App() {
     }
     ultimaPeticionCommits.current = peticion
 
-    void obtenerCommits(proyectoId)
+    if (maquinaId === null) return
+    void obtenerCommitsDe(maquinaId, proyectoId)
       .then((nuevosCommits) => {
         if (ultimaPeticionCommits.current !== peticion) return
         establecerCommits(nuevosCommits)
@@ -88,7 +88,7 @@ export function App() {
         peticion.fallo = true
         establecerErrorCommits(true)
       })
-  }, [hashProyecto, instantanea.actualizadaMs, proyectoAbierto, proyectoId])
+  }, [hashProyecto, instantanea.actualizadaMs, maquinaId, proyectoAbierto, proyectoId])
 
   // El agente cuya línea se está mostrando. Las respuestas que llegan tarde de otro
   // agente (tras navegar) se descartan comparando con este valor.
@@ -111,31 +111,33 @@ export function App() {
   useEffect(() => {
     establecerLinea(null)
     establecerAgenteNoDisponible(false)
-    if (agenteId === null) return
-    void obtenerLinea(agenteId, null)
+    if (agenteId === null || maquinaId === null) return
+    void obtenerLineaDe(maquinaId, agenteId, null)
       .then((resultado) => aplicarLinea(agenteId, resultado, false))
       .catch((error: unknown) => fallarLinea(agenteId, error))
-  }, [agenteId, aplicarLinea, fallarLinea])
+  }, [agenteId, aplicarLinea, fallarLinea, maquinaId])
 
   useEffect(() => {
-    if (agenteId === null || !agenteActivo) return
+    if (agenteId === null || maquinaId === null || !agenteActivo) return
     const temporizador = setInterval(() => {
-      void obtenerLinea(agenteId, null)
+      void obtenerLineaDe(maquinaId, agenteId, null)
         .then((resultado) => aplicarLinea(agenteId, resultado, true))
         .catch((error: unknown) => fallarLinea(agenteId, error))
     }, 3_000)
     return () => clearInterval(temporizador)
-  }, [agenteActivo, agenteId, aplicarLinea, fallarLinea])
+  }, [agenteActivo, agenteId, aplicarLinea, fallarLinea, maquinaId])
 
   const cargarAnteriores = useCallback(() => {
-    if (agenteId === null || linea?.antes == null) return
-    void obtenerLinea(agenteId, linea.antes)
+    if (agenteId === null || maquinaId === null || linea?.antes == null) return
+    void obtenerLineaDe(maquinaId, agenteId, linea.antes)
       .then((resultado) => aplicarLinea(agenteId, resultado, false))
       .catch((error: unknown) => fallarLinea(agenteId, error))
-  }, [agenteId, aplicarLinea, fallarLinea, linea?.antes])
+  }, [agenteId, aplicarLinea, fallarLinea, linea?.antes, maquinaId])
 
   let contenido
-  if (coincidenciaAgente !== null) {
+  if (estado.sinSesion) {
+    contenido = <Entrar alEntrar={estado.recargar} />
+  } else if (agenteId !== null) {
     if (instantanea.datos === null && !instantanea.error) {
       contenido = <p className="ca-empty da-cargando">Cargando…</p>
     } else {
@@ -143,6 +145,7 @@ export function App() {
         <DetalleAgente
           agente={agenteNoDisponible ? null : agenteAbierto}
           proyectos={instantanea.datos?.proyectos ?? []}
+          maquinaId={maquinaId}
           linea={linea}
           cargarAnteriores={cargarAnteriores}
           ahora={Date.now()}
@@ -159,17 +162,18 @@ export function App() {
         agentes={instantanea.datos.agentes}
         commits={commits}
         errorCommits={errorCommits}
+        maquinaId={maquinaId}
         ahora={Date.now()}
       />
       )
     }
   } else {
-    contenido = <VistaGeneral {...instantanea} ahora={Date.now()} />
+    contenido = <VistaGeneral respuesta={estado.datos} error={estado.error} actualizadaMs={estado.actualizadaMs} ahora={Date.now()} />
   }
 
   return (
     <>
-      {instantanea.error && (proyectoId !== null || coincidenciaAgente !== null) && (
+      {estado.error && (proyectoId !== null || agenteId !== null) && (
         <div className="ca-error" role="status">
           Sin conexión con el agente · reintentando
         </div>

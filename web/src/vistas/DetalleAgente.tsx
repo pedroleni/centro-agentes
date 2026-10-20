@@ -4,6 +4,7 @@ import { etiquetaEstado, nombreModelo, porcentajeContexto, tiempoAgente } from '
 import { nombreRol } from '../logica/roles.js'
 import { Avatar } from './Avatar.js'
 import { LineaTiempo } from './LineaTiempo.js'
+import { rutaProyecto } from '../logica/rutas.js'
 
 type PropiedadesDetalleAgente = {
   agente: Agente | null
@@ -11,6 +12,7 @@ type PropiedadesDetalleAgente = {
   linea: ResultadoLinea | null
   cargarAnteriores: () => void
   ahora: number
+  maquinaId?: string | null
 }
 
 function estaActivo(agente: Agente): boolean {
@@ -39,6 +41,7 @@ export function DetalleAgente({
   linea,
   cargarAnteriores,
   ahora,
+  maquinaId = null,
 }: PropiedadesDetalleAgente) {
   if (agente === null) {
     return (
@@ -67,7 +70,7 @@ export function DetalleAgente({
             {proyectosAgente.length === 0 ? (
               <span className="ca-chip">Sin proyecto</span>
             ) : proyectosAgente.map((proyecto) => (
-              <a className="ca-chip" href={`#/proyecto/${proyecto.id}`} key={proyecto.id}>
+              <a className="ca-chip" href={rutaProyecto(maquinaId, proyecto.id)} key={proyecto.id}>
                 {proyecto.nombre}
               </a>
             ))}

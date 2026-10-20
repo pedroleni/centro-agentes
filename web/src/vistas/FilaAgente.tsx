@@ -1,10 +1,12 @@
 import type { Agente } from '@centro/compartido'
 import { etiquetaEstado, nombreModelo, porcentajeContexto, tiempoAgente } from '../logica/formato.js'
 import { Avatar } from './Avatar.js'
+import { rutaAgente } from '../logica/rutas.js'
 
 type PropiedadesFilaAgente = {
   agente: Agente
   ahora: number
+  maquinaId?: string | null
 }
 
 function claseEstado(agente: Agente): string {
@@ -17,14 +19,14 @@ function claseEstado(agente: Agente): string {
   return 'done'
 }
 
-export function FilaAgente({ agente, ahora }: PropiedadesFilaAgente) {
+export function FilaAgente({ agente, ahora, maquinaId = null }: PropiedadesFilaAgente) {
   const porcentaje = porcentajeContexto(agente)
   const detallesModelo = [nombreModelo(agente.modelo), agente.esfuerzo].filter(Boolean).join(' · ')
 
   return (
     <a
       className="ca-agent-wrap"
-      href={`#/agente/${encodeURIComponent(agente.id)}`}
+      href={rutaAgente(maquinaId, agente.id)}
       onClick={(evento) => evento.stopPropagation()}
     >
       <div className="ca-ag">
